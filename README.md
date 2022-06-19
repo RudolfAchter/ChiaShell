@@ -7,6 +7,7 @@ This is my attemnpt to automate Chia things with Powershell. I discovered the ch
 You need openssl installed and available in PATH. For Windows look here:
 - <https://medium.com/swlh/installing-openssl-on-windows-10-and-updating-path-80992e26f6a1>
 
+Also on Windows you need [Powershell 7](https://docs.microsoft.com/en-us/powershell/scripting/install/installing-powershell-on-windows?view=powershell-7.2) for now. It should be backwards compatible to Powershell 5.1 but until now i cannot automatically get the necessary Client Certificates for RCP Connection on Powershell 5.1. Feel free to fork and make things better (come back with merge request 😉).
 
 Clone this repository
 
