@@ -72,11 +72,13 @@ General notes
     #We need Client Cert in PKCS12 Format
     if(-not (Test-Path $p12CertPath)){
         Start-Process -FilePath openssl -ArgumentList ("pkcs12","-export","-in",$clientCert.FullName,
-            "-inkey",$clientKey.FullName,"-out",,
+            "-inkey",$clientKey.FullName,"-out",$p12CertPath,
             "-passout","pass:chia")
     }
     
     $p12CertFile=Get-Item -Path $p12CertPath
+    #FIXME On Windows Powershell 5.1 there is no -Password Parmeter for Get-PfxCertificate
+    #For Now you need Powershell Core 7 (https://docs.microsoft.com/en-us/powershell/scripting/install/installing-powershell-on-windows?view=powershell-7.2)
     $p12Cert=Get-PfxCertificate -FilePath $p12CertFile.FullName -Password (ConvertTo-SecureString -String "chia" -AsPlainText -Force)
     $p12Cert
 }
