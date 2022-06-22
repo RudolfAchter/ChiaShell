@@ -67,8 +67,14 @@ General notes
 #>
     $clientCert = Get-Item -Path ("~/.chia/mainnet/config/ssl/wallet/private_wallet.crt")
     $clientKey= Get-Item -Path ("~/.chia/mainnet/config/ssl/wallet/private_wallet.key")
-    $p12CertPath = ($clientCert.Directory.FullName + "/" + $clientCert.BaseName + ".p12")
 
+    <#
+        FIXME better Solution would be Using DotNet Class System.Security.Cryptography.X509Certificates
+        - <https://docs.microsoft.com/en-us/dotnet/api/system.security.cryptography.x509certificates.x509certificate2.createfrompemfile?view=net-6.0#system-security-cryptography-x509certificates-x509certificate2-createfrompemfile(system-string-system-string)>
+        - <https://docs.microsoft.com/en-us/dotnet/api/system.security.cryptography.x509certificates.x509certificate2.-ctor?view=net-6.0#system-security-cryptography-x509certificates-x509certificate2-ctor(system-byte()-system-string-system-security-cryptography-x509certificates-x509keystorageflags)>
+        No need to write a New .p12 File
+    #>
+    $p12CertPath = ($clientCert.Directory.FullName + "/" + $clientCert.BaseName + ".p12")
     #We need Client Cert in PKCS12 Format
     if(-not (Test-Path $p12CertPath)){
         Start-Process -FilePath openssl -ArgumentList ("pkcs12","-export","-in",$clientCert.FullName,
