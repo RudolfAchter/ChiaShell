@@ -12,7 +12,12 @@
     Harvester: 8560
     Wallet: 9256
 
+    FIXME : there are command collisions (for example Get-Transaction). Make cmdlet names more unique
+    For Example:
+        - Get-ChiaTransaction
+        - Get-ChiaWalletBalance
 
+    and so on..
 #>
 
 <#
