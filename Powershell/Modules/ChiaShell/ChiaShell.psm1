@@ -11,13 +11,6 @@
     Farmer: 8559
     Harvester: 8560
     Wallet: 9256
-
-    FIXME : there are command collisions (for example Get-Transaction). Make cmdlet names more unique
-    For Example:
-        - Get-ChiaTransaction
-        - Get-ChiaWalletBalance
-
-    and so on..
 #>
 
 <#
@@ -56,7 +49,7 @@ $Global:ChiaShell=@{
 
 
 
-Function Get-WalletCert {
+Function Get-ChiaWalletCert {
 <#
 .SYNOPSIS
 Gets Certificate of wallet to communicate with RPC
@@ -65,33 +58,16 @@ Gets Certificate of wallet to communicate with RPC
 Gets Certificate of wallet to communicate with RPC
 
 .EXAMPLE
-Get-WalletCert
+Get-ChiaWalletCert
 
 .NOTES
 General notes
 #>
     $clientCert = Get-Item -Path ("~/.chia/mainnet/config/ssl/wallet/private_wallet.crt")
     $clientKey= Get-Item -Path ("~/.chia/mainnet/config/ssl/wallet/private_wallet.key")
-
-    <#
-        FIXME better Solution would be Using DotNet Class System.Security.Cryptography.X509Certificates
-        - <https://docs.microsoft.com/en-us/dotnet/api/system.security.cryptography.x509certificates.x509certificate2.createfrompemfile?view=net-6.0#system-security-cryptography-x509certificates-x509certificate2-createfrompemfile(system-string-system-string)>
-        - <https://docs.microsoft.com/en-us/dotnet/api/system.security.cryptography.x509certificates.x509certificate2.-ctor?view=net-6.0#system-security-cryptography-x509certificates-x509certificate2-ctor(system-byte()-system-string-system-security-cryptography-x509certificates-x509keystorageflags)>
-        No need to write a New .p12 File
-    #>
-    $p12CertPath = ($clientCert.Directory.FullName + "/" + $clientCert.BaseName + ".p12")
-    #We need Client Cert in PKCS12 Format
-    if(-not (Test-Path $p12CertPath)){
-        Start-Process -FilePath openssl -ArgumentList ("pkcs12","-export","-in",$clientCert.FullName,
-            "-inkey",$clientKey.FullName,"-out",$p12CertPath,
-            "-passout","pass:chia")
-    }
-    
-    $p12CertFile=Get-Item -Path $p12CertPath
-    #FIXME On Windows Powershell 5.1 there is no -Password Parmeter for Get-PfxCertificate
-    #For Now you need Powershell Core 7 (https://docs.microsoft.com/en-us/powershell/scripting/install/installing-powershell-on-windows?view=powershell-7.2)
-    $p12Cert=Get-PfxCertificate -FilePath $p12CertFile.FullName -Password (ConvertTo-SecureString -String "chia" -AsPlainText -Force)
-    $p12Cert
+    #https://docs.microsoft.com/en-us/dotnet/api/system.security.cryptography.x509certificates.x509certificate2.createfrompemfile?view=net-6.0#system-security-cryptography-x509certificates-x509certificate2-createfrompemfile(system-string-system-string)
+    $cert=[System.Security.Cryptography.X509Certificates.X509Certificate2]::CreateFromPemFile($clientCert,$clientKey)
+    $cert
 }
 
 
@@ -136,7 +112,7 @@ General notes
     $result=Invoke-RestMethod -Uri ("https://"+ $Global:ChiaShell.Api.Wallet.Host +":" + $Global:ChiaShell.Api.Wallet.Port + "/$function") `
         -Method "POST"  `
         -SkipCertificateCheck `
-        -Certificate (Get-WalletCert) @h_args
+        -Certificate (Get-ChiaWalletCert) @h_args
         
     
     if($result.error){
@@ -148,7 +124,7 @@ General notes
 }
 
 
-Function Get-Wallets {
+Function Get-ChiaWallets {
     [CmdletBinding()]
 
     $result = _WalletApiCall -function "get_wallets"
@@ -156,7 +132,7 @@ Function Get-Wallets {
 }
 
 
-Function Get-WalletBalance {
+Function Get-ChiaWalletBalance {
     [CmdletBinding()]
     param(
         $wallet_id=1
@@ -169,7 +145,7 @@ Function Get-WalletBalance {
 }
 
 
-Function Get-Transactions {
+Function Get-ChiaTransactions {
     [CmdletBinding()]
     param(
         [int]$wallet_id=1,
@@ -201,7 +177,7 @@ Function Get-Transactions {
     }
 }
 
-Function Get-Transaction {
+Function Get-ChiaTransaction {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory=$true)]
@@ -217,7 +193,7 @@ Function Get-Transaction {
 }
 
 
-Function Send-Transaction {
+Function Send-ChiaTransaction {
 <#
 .SYNOPSIS
 Sends a Chia Transaction
@@ -241,7 +217,7 @@ transaction to which address
 Memos (String or Array of multiple memos)
 
 .EXAMPLE
-Send-Transaction -wallet_id $wallet.id -amount $amount -fee $fee -address $myAddress -memos $memo
+Send-ChiaTransaction -wallet_id $wallet.id -amount $amount -fee $fee -address $myAddress -memos $memo
 
 .NOTES
 General notes
