@@ -63,11 +63,25 @@ Get-ChiaWalletCert
 .NOTES
 General notes
 #>
+   # Get-ChildItem 'HKLM:\SOFTWARE\Microsoft\NET Framework Setup\NDP' -Recurse | Get-ItemProperty -Name version -EA 0 | Where { $_.PSChildName -Match '^(?!S)\p{L}'} | Select PSChildName, version
+
     $clientCert = Get-Item -Path ("~/.chia/mainnet/config/ssl/wallet/private_wallet.crt")
     $clientKey= Get-Item -Path ("~/.chia/mainnet/config/ssl/wallet/private_wallet.key")
     #https://docs.microsoft.com/en-us/dotnet/api/system.security.cryptography.x509certificates.x509certificate2.createfrompemfile?view=net-6.0#system-security-cryptography-x509certificates-x509certificate2-createfrompemfile(system-string-system-string)
-    $cert=[System.Security.Cryptography.X509Certificates.X509Certificate2]::CreateFromPemFile($clientCert,$clientKey)
-    $cert
+    #DotNet 6 or higher does this native!
+    #$cert=[System.Security.Cryptography.X509Certificates.X509Certificate2]::CreateFromPemFile($clientCert,$clientKey)
+    
+    # But Windows 10 only has .NET Framework 4.8 (Windows 10)
+    # Powershell Module PSPKI (Workaround)
+    $password = ConvertTo-SecureString "chia" -asplaintext -force
+    $p12CertPath = ($clientCert.Directory.FullName + "/" + $clientCert.BaseName + ".pfx")
+    Convert-PemToPfx -InputPath $clientCert.FullName -KeyPath $clientKey.FullName -OutputPath $p12CertPath -Password $password
+
+    
+
+    $cert=[System.Security.Cryptography.X509Certificates.X509Certificate2]::New($clientKey.FullName)
+    $cert.Import($clientCert.FullName)
+    $cert.Import($clientKey.FullName)
 }
 
 
