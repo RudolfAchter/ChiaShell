@@ -28,6 +28,8 @@ if($psversionTable.PSVersion -lt "6.2"){
 $chiaConfigFile=Get-Item "~/.chia/mainnet/config/config.yaml"
 $chiaConfig=Get-Content -Path $chiaConfigFile.FullName | ConvertFrom-Yaml
 
+
+
 $Global:ChiaShell=@{
     Api = @{
         Daemon = @{
@@ -37,6 +39,8 @@ $Global:ChiaShell=@{
         FullNode = @{
             Host = "localhost"
             Port = $ChiaConfig.full_node.rpc_port
+            clientCert = "~/.chia/mainnet/config/ssl/full_node/private_full_node.crt"
+            clientKey = "~/.chia/mainnet/config/ssl/full_node/private_full_node.key"
         }
         Farmer = @{
             Host = "localhost"
@@ -49,6 +53,8 @@ $Global:ChiaShell=@{
         Wallet = @{
             Host = "localhost"
             Port = $ChiaConfig.wallet.rpc_port
+            clientCert = "~/.chia/mainnet/config/ssl/wallet/private_wallet.crt"
+            clientKey = "~/.chia/mainnet/config/ssl/wallet/private_wallet.key"
         }
     }
     Run=@{
@@ -58,7 +64,7 @@ $Global:ChiaShell=@{
 
 
 $Global:ChiaShellArgumentCompleters=@{
-    WalletId               = {
+    WalletId = {
         param($commandName, $parameterName, $wordToComplete, $commandAst, $fakeBoundParameters)
         $WarningPreference = 'SilentlyContinue'
         if ($wordToComplete -ne '') {
@@ -77,29 +83,47 @@ $Global:ChiaShellArgumentCompleters=@{
         else {
             '<#No Wallet found#>'
         }
-
+    }
+    ApiName = {
+        param($commandName, $parameterName, $wordToComplete, $commandAst, $fakeBoundParameters)
+        if ($wordToComplete -ne '') {
+            $Global:ChiaShell.Api.GetEnumerator().Name | Where-Object $_ -like ($wordToComplete + "*")
+        }
+        else{
+            $Global:ChiaShell.Api.GetEnumerator().Name
+        }
     }
 }
 
 
-Function Get-ChiaWalletCert {
 <#
-.SYNOPSIS
-Gets Certificate of wallet to communicate with RPC
+    Windows Powershell 5.1 Workaround
+    -SkipCertificateCheck Switch is missing in Windows Powershell 5.1
+    - https://til.intrepidintegration.com/powershell/ssl-cert-bypass
 
-.DESCRIPTION
-Gets Certificate of wallet to communicate with RPC
-
-.EXAMPLE
-Get-ChiaWalletCert
-
-.NOTES
-General notes
 #>
-   # Get-ChildItem 'HKLM:\SOFTWARE\Microsoft\NET Framework Setup\NDP' -Recurse | Get-ItemProperty -Name version -EA 0 | Where { $_.PSChildName -Match '^(?!S)\p{L}'} | Select PSChildName, version
+if($psversionTable.PSVersion -lt [system.version]::New("6.0")){
+    add-type @"
+using System.Net;
+using System.Security.Cryptography.X509Certificates;
+public class TrustAllCertsPolicy : ICertificatePolicy {
+    public bool CheckValidationResult(
+        ServicePoint srvPoint, X509Certificate certificate,
+        WebRequest request, int certificateProblem) {
+        return true;
+    }
+}
+"@
+[System.Net.ServicePointManager]::CertificatePolicy = New-Object TrustAllCertsPolicy
+}
 
-    $clientCert = Get-Item -Path ("~/.chia/mainnet/config/ssl/wallet/private_wallet.crt")
-    $clientKey= Get-Item -Path ("~/.chia/mainnet/config/ssl/wallet/private_wallet.key")
+
+Function Get-ChiaCert {
+    param(
+        $api
+    )
+    $clientCert=Get-Item -Path $Global:ChiaShell.Api.$api.clientCert
+    $clientKey=Get-Item -Path $Global:ChiaShell.Api.$api.clientKey
 
     #https://docs.microsoft.com/en-us/dotnet/api/system.security.cryptography.x509certificates.x509certificate2.createfrompemfile?view=net-6.0#system-security-cryptography-x509certificates-x509certificate2-createfrompemfile(system-string-system-string)
     #DotNet 6 or higher does this native!
@@ -115,35 +139,14 @@ General notes
         $p12CertPath = ($clientCert.Directory.FullName + "/" + $clientCert.BaseName + ".pfx")
         $cert=Convert-PemToPfx -InputPath $clientCert.FullName -KeyPath $clientKey.FullName -OutputPath $p12CertPath -Password $password
     }
-
     $cert
 
 }
 
 
-<#
-    Windows Powershell 5.1 Workaround
-    -SkipCertificateCheck Switch is missing in Windows Powershell 5.1
-    - https://til.intrepidintegration.com/powershell/ssl-cert-bypass
-
-#>
-if($psversionTable.PSVersion -lt [system.version]::New("6.0")){
-        add-type @"
-    using System.Net;
-    using System.Security.Cryptography.X509Certificates;
-    public class TrustAllCertsPolicy : ICertificatePolicy {
-        public bool CheckValidationResult(
-            ServicePoint srvPoint, X509Certificate certificate,
-            WebRequest request, int certificateProblem) {
-            return true;
-        }
-    }
-"@
-    [System.Net.ServicePointManager]::CertificatePolicy = New-Object TrustAllCertsPolicy
-}
 
 
-Function _WalletApiCall {
+Function _ChiaApiCall {
 <#
 .SYNOPSIS
 Generic API Call for Chia wallet RPC
@@ -165,6 +168,7 @@ General notes
 #>
     [CmdletBinding()]
     param(
+        $api="Wallet",
         $function,
         $params
     )
@@ -184,15 +188,15 @@ General notes
     #Windows Powershell 5.1 Workaround
     if($psversionTable.PSVersion -lt [system.version]::New("6.0")){
         #TODO maybe Get JSON manually to get deeper Data Structure
-        $result=Invoke-RestMethod -Uri ("https://"+ $Global:ChiaShell.Api.Wallet.Host +":" + $Global:ChiaShell.Api.Wallet.Port + "/$function") `
+        $result=Invoke-RestMethod -Uri ("https://"+ $Global:ChiaShell.Api.$api.Host +":" + $Global:ChiaShell.Api.$api.Port + "/$function") `
             -Method "POST"  `
-            -Certificate (Get-ChiaWalletCert) @h_args
+            -Certificate (Get-ChiaCert -api $api) @h_args
     }
     else{
-        $result=Invoke-RestMethod -Uri ("https://"+ $Global:ChiaShell.Api.Wallet.Host +":" + $Global:ChiaShell.Api.Wallet.Port + "/$function") `
+        $result=Invoke-RestMethod -Uri ("https://"+ $Global:ChiaShell.Api.$api.Host +":" + $Global:ChiaShell.Api.$api.Port + "/$function") `
             -Method "POST"  `
             -SkipCertificateCheck `
-            -Certificate (Get-ChiaWalletCert) @h_args
+            -Certificate (Get-ChiaCert -api $api) @h_args
     }
 
     
@@ -208,7 +212,7 @@ General notes
 Function Get-ChiaWallets {
     [CmdletBinding()]
 
-    $result = _WalletApiCall -function "get_wallets"
+    $result = _ChiaApiCall -api wallet -function "get_wallets"
     $result.wallets
 }
 
@@ -216,7 +220,7 @@ Function Get-ChiaWallets {
 Function Get-ChiaKey {
     [CmdletBinding()]
 
-    $result = _WalletApiCall -function "get_public_keys"
+    $result = _ChiaApiCall -api wallet -function "get_public_keys"
     $result.public_key_fingerprints
 }
 
@@ -226,7 +230,7 @@ Function Use-ChiaKey {
         $fingerprint
     )
 
-    $result = _WalletApiCall -function "log_in" -params @{
+    $result = _ChiaApiCall -api wallet -function "log_in" -params @{
         fingerprint = $fingerprint
     }
     $result.fingerprint
@@ -276,7 +280,7 @@ Function Get-ChiaWalletBalance {
         $wallet_id=$ChiaShell.Run.SelectedWallet.id
     )
 
-    $result = _WalletApiCall -function "get_wallet_balance" -params @{
+    $result = _ChiaApiCall -api wallet -function "get_wallet_balance" -params @{
         wallet_id=$wallet_id
     }
     $result.wallet_balance
@@ -307,7 +311,7 @@ Function Get-ChiaTransactions {
     #>
     $h_params.Add("reverse",$reverse)
 
-    $result = _WalletApiCall -function "get_transactions" -params $h_params
+    $result = _ChiaApiCall -api wallet -function "get_transactions" -params $h_params
     $result.transactions | ForEach-Object {
         $t=$_
         Add-Member -InputObject $t -MemberType NoteProperty -Name "created_at_datetime" -Value ([timezone]::CurrentTimeZone.ToLocalTime(([datetime]'1/1/1970').AddSeconds($t.created_at_time)))
@@ -329,7 +333,7 @@ Function Get-ChiaAllOffers {
     }
 
 
-    $result = _WalletApiCall -function "get_all_offers" -params $h_params
+    $result = _ChiaApiCall -api wallet -function "get_all_offers" -params $h_params
     $result.trade_records
 }
 
@@ -384,7 +388,7 @@ General notes
                 trade_id=$trade_id
                 secure=$secure
             }
-            $result = _WalletApiCall -function "cancel_offer" -params $h_params
+            $result = _ChiaApiCall -api wallet -function "cancel_offer" -params $h_params
 
             [PSCustomObject]([ordered]@{
                 trade_id = $trade_id
@@ -449,7 +453,7 @@ Function Get-ChiaTransaction {
         transaction_id=$transaction_id
     }
 
-    $result = _WalletApiCall -function "get_transaction" -params $h_params
+    $result = _ChiaApiCall -api wallet -function "get_transaction" -params $h_params
     $result.transaction
 }
 
@@ -466,7 +470,7 @@ Function Get-ChiaNftInfo {
         coin_id=$coin_id
     }
 
-    $result = _WalletApiCall -function "nft_get_info" -params $h_params
+    $result = _ChiaApiCall -api wallet -function "nft_get_info" -params $h_params
     $result.nft_info
 }
 
@@ -525,7 +529,7 @@ General notes
         }
         $h_params.Add("memos",$memos)
     }
-    $result = _WalletApiCall -function "send_transaction" -params $h_params
+    $result = _ChiaApiCall -api wallet -function "send_transaction" -params $h_params
     $result.transaction
 }
 
@@ -671,4 +675,11 @@ General notes
 }
 
 
+Function Get-ChiaNetworkInfo {
+
+    _ChiaApiCall -api FullNode -function "get_network_info"
+}
+
+
 Register-ArgumentCompleter -CommandName Get-ChiaWalletBalance -ParameterName wallet_id -ScriptBlock $Global:ChiaShellArgumentCompleters.WalletId
+Register-ArgumentCompleter -CommandName _ChiaApiCall -ParameterName api -ScriptBlock $Global:ChiaShellArgumentCompleters.ApiName
