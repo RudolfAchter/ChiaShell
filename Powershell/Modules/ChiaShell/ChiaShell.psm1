@@ -21,32 +21,65 @@ curl --insecure --cert ~/.chia/mainnet/config/ssl/wallet/private_wallet.crt \
 
 #You could get this settings out of config.yml. But for now thats enough
 
+if($psversionTable.PSVersion -lt "6.2"){
+    #Requires -Modules PSPKI
+}
+
+$chiaConfigFile=Get-Item "~/.chia/mainnet/config/config.yaml"
+$chiaConfig=Get-Content -Path $chiaConfigFile.FullName | ConvertFrom-Yaml
+
 $Global:ChiaShell=@{
     Api = @{
         Daemon = @{
             Host = "localhost"
-            Port = 55400
+            Port = $ChiaConfig.daemon_port
         }
         FullNode = @{
             Host = "localhost"
-            Port = 8555
+            Port = $ChiaConfig.full_node.rpc_port
         }
         Farmer = @{
             Host = "localhost"
-            Port = 8559
+            Port = $ChiaConfig.farmer.rpc_port
         }
         Harvester = @{
             Host = "localhost"
-            Port = 8560
+            Port = $ChiaConfig.harvester.rpc_port
         }
         Wallet = @{
             Host = "localhost"
-            Port = 9256
+            Port = $ChiaConfig.wallet.rpc_port
         }
     }
-
+    Run=@{
+        SelectedWallet=$null
+    }
 }
 
+
+$Global:ChiaShellArgumentCompleters=@{
+    WalletId               = {
+        param($commandName, $parameterName, $wordToComplete, $commandAst, $fakeBoundParameters)
+        $WarningPreference = 'SilentlyContinue'
+        if ($wordToComplete -ne '') {
+            $results = Get-ChiaWallets | Where-Object -like ($wordToComplete + "*")
+        }
+        else {
+            $results = Get-ChiaWallets
+        }
+
+        if ($results -ne $null) {
+            $results | ForEach-Object {
+                $result = $_
+                ('' + $result.id + ' <#' + $result.name + '#>')
+            }
+        }
+        else {
+            '<#No Wallet found#>'
+        }
+
+    }
+}
 
 
 Function Get-ChiaWalletCert {
@@ -70,13 +103,18 @@ General notes
 
     #https://docs.microsoft.com/en-us/dotnet/api/system.security.cryptography.x509certificates.x509certificate2.createfrompemfile?view=net-6.0#system-security-cryptography-x509certificates-x509certificate2-createfrompemfile(system-string-system-string)
     #DotNet 6 or higher does this native!
-    #$cert=[System.Security.Cryptography.X509Certificates.X509Certificate2]::CreateFromPemFile($clientCert,$clientKey)
-
-    # But Windows 10 only has .NET Framework 4.8 (Windows 10)
-    # Powershell Module PSPKI (Workaround). Certificate Handling in Microsoft .Net Framework seems to be a mess
-    $password = ConvertTo-SecureString "chia" -asplaintext -force
-    $p12CertPath = ($clientCert.Directory.FullName + "/" + $clientCert.BaseName + ".pfx")
-    $cert=Convert-PemToPfx -InputPath $clientCert.FullName -KeyPath $clientKey.FullName -OutputPath $p12CertPath -Password $password
+    if($psversionTable.PSVersion -gt "6.2"){
+        #Linux and Powershell Core greater 6.2
+        $cert=[System.Security.Cryptography.X509Certificates.X509Certificate2]::CreateFromPemFile($clientCert,$clientKey)
+    }
+    else{
+        # Old Windows 10 Clients
+        # But Windows 10 only has .NET Framework 4.8 (Windows 10)
+        # Powershell Module PSPKI (Workaround). Certificate Handling in Microsoft .Net Framework seems to be a mess
+        $password = ConvertTo-SecureString "chia" -asplaintext -force
+        $p12CertPath = ($clientCert.Directory.FullName + "/" + $clientCert.BaseName + ".pfx")
+        $cert=Convert-PemToPfx -InputPath $clientCert.FullName -KeyPath $clientKey.FullName -OutputPath $p12CertPath -Password $password
+    }
 
     $cert
 
@@ -175,10 +213,67 @@ Function Get-ChiaWallets {
 }
 
 
+Function Get-ChiaKey {
+    [CmdletBinding()]
+
+    $result = _WalletApiCall -function "get_public_keys"
+    $result.public_key_fingerprints
+}
+
+Function Use-ChiaKey {
+    [CmdletBinding()]
+    param(
+        $fingerprint
+    )
+
+    $result = _WalletApiCall -function "log_in" -params @{
+        fingerprint = $fingerprint
+    }
+    $result.fingerprint
+}
+
+Function Show-ChiaWallets {
+    [CmdletBinding()]
+    param(
+        [ValidateSet("Select","Table","List","Grid")]
+        $View="Select",
+        $Columns=@("id","name","type")
+    )
+
+    Switch($View){
+        "Select" {
+            Get-ChiaWallets | Select-Object $Columns
+            break
+        }
+        "Table" {
+            Get-ChiaWallets | Format-Table $Columns
+            break
+        }
+        "List" {
+            Get-ChiaWallets | Format-List $Columns
+            break
+        }
+        "Grid" {
+            Get-ChiaWallets | Select-Object $Columns | Out-ConsoleGridView
+            break
+        }
+    }
+}
+
+Function Select-ChiaWallet {
+    [CmdletBinding()]
+    param(
+
+    )
+    $Columns=@("id","name","type")
+    $global:ChiaShell.Run.SelectedWallet = Get-ChiaWallets | Select-Object $Columns | Out-ConsoleGridView -OutputMode Single -Title "Select Chia Wallet with <space>. Prompt with <enter>"
+    $global:ChiaShell.Run.SelectedWallet
+}
+
 Function Get-ChiaWalletBalance {
     [CmdletBinding()]
     param(
-        $wallet_id=1
+        $wallet_id=$ChiaShell.Run.SelectedWallet.id
     )
 
     $result = _WalletApiCall -function "get_wallet_balance" -params @{
@@ -191,7 +286,7 @@ Function Get-ChiaWalletBalance {
 Function Get-ChiaTransactions {
     [CmdletBinding()]
     param(
-        [int]$wallet_id=1,
+        [int]$wallet_id=$ChiaShell.Run.SelectedWallet.id,
         [int]$start=0,
         [int]$end=50,
         #https://github.com/Chia-Network/chia-blockchain/search?q=sort_key
@@ -220,6 +315,23 @@ Function Get-ChiaTransactions {
     }
 }
 
+
+Function Get-ChiaAllOffers {
+    [CmdletBinding()]
+    param(
+        $start=0,
+        $end=10
+    )
+
+    $h_params=@{
+        start=$start
+        end=$end
+    }
+
+
+    $result = _WalletApiCall -function "get_all_offers" -params $h_params
+}
+
 Function Get-ChiaTransaction {
     [CmdletBinding()]
     param(
@@ -233,6 +345,23 @@ Function Get-ChiaTransaction {
 
     $result = _WalletApiCall -function "get_transaction" -params $h_params
     $result.transaction
+}
+
+
+Function Get-ChiaNftInfo {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory=$true)]
+        [Alias("NftId")]
+        [string]$coin_id
+    )
+
+    $h_params=@{
+        coin_id=$coin_id
+    }
+
+    $result = _WalletApiCall -function "nft_get_info" -params $h_params
+    $result.nft_info
 }
 
 
@@ -267,7 +396,7 @@ General notes
 #>
     [CmdletBinding()]
     param(
-        [int]$wallet_id=1,
+        [int]$wallet_id=$ChiaShell.Run.SelectedWallet.id,
         [Parameter(Mandatory=$true)]
         [int64]$amount,
         [int64]$fee=0,
@@ -433,6 +562,7 @@ General notes
             Write-Error("Error in creating transaction")
         }
     }
-
-
 }
+
+
+Register-ArgumentCompleter -CommandName Get-ChiaWalletBalance -ParameterName wallet_id -ScriptBlock $Global:ChiaShellArgumentCompleters.WalletId
