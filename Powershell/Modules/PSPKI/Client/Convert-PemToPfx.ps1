@@ -72,10 +72,10 @@
         $rsa.ImportCspBlob($PrivateKey)
         if ($PSVersionTable.PSEdition -eq "Core") {
             Add-Type -AssemblyName "System.Security.Cryptography.X509Certificates"
-            $script:Cert = [Security.Cryptography.X509Certificates.RSACertificateExtensions]::CopyWithPrivateKey($_Cert.RawData, $rsa)
+            $Cert = [Security.Cryptography.X509Certificates.RSACertificateExtensions]::CopyWithPrivateKey($_Cert.RawData, $rsa)
 
         } else {
-            $script:Cert.PrivateKey = $rsa
+            $Cert.PrivateKey = $rsa
         }
         $rsa
     }
