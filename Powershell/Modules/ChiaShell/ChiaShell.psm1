@@ -320,7 +320,7 @@ Function Get-ChiaAllOffers {
     [CmdletBinding()]
     param(
         $start=0,
-        $end=10
+        $end=100
     )
 
     $h_params=@{
@@ -330,6 +330,112 @@ Function Get-ChiaAllOffers {
 
 
     $result = _WalletApiCall -function "get_all_offers" -params $h_params
+    $result.trade_records
+}
+
+Function Remove-Offer {
+<#
+.SYNOPSIS
+Short description
+
+.DESCRIPTION
+Long description
+
+.PARAMETER trade_ids
+Parameter description
+
+.PARAMETER secure
+Parameter description
+
+.EXAMPLE
+Show-ChiaAllOffers | Where-Object status -eq "PENDING_ACCEPT" | Remove-Offer
+
+```text
+trade_id                                                           success
+--------                                                           -------
+0x051e7141341a95396e6fa18662be6d5f0f5ab4b6ecdfaa5d39877a2f5e9dbcd4    True
+0x2ffb8afc6bba8ea5a94f76ddf605a94a2a4922c7a43cf66c27d6f427544e6971    True
+0x84d632fb57fb20e4b24e137b9403438807bc72a5e45ebd727c870fbc8d2d1324    True
+0xf7c1bca5cbb83124ad59d4c2f04bc5161043b365b348e2694b46f1d64ad3ac20    True
+0xfa43c54f65f43486bb8e40139edc470fc8ae42b8ad6eea60abdd09442259be3d    True
+```
+.NOTES
+General notes
+#>
+    param(
+        [Parameter(ValueFromPipeline=$true)]
+        $trade_ids,
+        [bool]$secure=$true
+    )
+
+    Begin{}
+
+    Process{
+
+        $trade_ids | ForEach-Object {
+            $trade_id=$_
+
+            #if there is directly a offer object
+            if($trade_id.GetType().Name -ne "String"){
+                $trade_id=$trade_id.trade_id
+            }
+
+            $h_params=@{
+                trade_id=$trade_id
+                secure=$secure
+            }
+            $result = _WalletApiCall -function "cancel_offer" -params $h_params
+
+            [PSCustomObject]([ordered]@{
+                trade_id = $trade_id
+                success=$result.success
+            })
+        }
+
+
+    }
+}
+
+Function Show-ChiaAllOffers {
+<#
+.SYNOPSIS
+Short description
+
+.DESCRIPTION
+Long description
+
+.PARAMETER start
+Parameter description
+
+.PARAMETER end
+Parameter description
+
+.EXAMPLE
+Show-ChiaAllOffers | %{Get-ChiaNftInfo -coin_id $_.requested_item} | %{Start-Process $_.data_uris[0]}
+
+.NOTES
+General notes
+#>
+    [CmdletBinding()]
+    param(
+        $start=0,
+        $end=100
+    )
+    $offers=Get-ChiaAllOffers -start $start -end $end
+    $offers | ForEach-Object {
+        $offer=$_
+        [PSCustomObject]@{
+            created_at_time = $offer.created_at_time
+            DateCreated=[timezone]::CurrentTimeZone.ToLocalTime(([datetime]'1/1/1970').AddSeconds($offer.created_at_time))
+            is_my_offer = $offer.is_my_offer
+            status = $offer.status
+            offered = $offer.summary.offered
+            requested_item = $offer.summary.requested.PsObject.Properties.Name
+            requested_count = $offer.summary.requested.PsObject.Properties.Value
+            trade_id = $offer.trade_id
+        }
+
+    }
 }
 
 Function Get-ChiaTransaction {
