@@ -25,6 +25,8 @@ if($psversionTable.PSVersion -lt "6.2"){
     #Requires -Modules PSPKI
 }
 
+#Requires -Modules Powershell-Yaml
+
 $chiaConfigFile=Get-Item "~/.chia/mainnet/config/config.yaml"
 $chiaConfig=Get-Content -Path $chiaConfigFile.FullName | ConvertFrom-Yaml
 
@@ -317,6 +319,18 @@ Function Get-ChiaTransactions {
         Add-Member -InputObject $t -MemberType NoteProperty -Name "created_at_datetime" -Value ([timezone]::CurrentTimeZone.ToLocalTime(([datetime]'1/1/1970').AddSeconds($t.created_at_time)))
         $t
     }
+}
+
+Function Get-ChiaTransaction {
+    [CmdletBinding()]
+    param(
+        $transaction_id
+    )
+
+    $h_params=@{
+        transaction_id=$transaction_id
+    }
+    $result = _ChiaApiCall -api wallet -function "get_transaction" -params $h_params
 }
 
 
@@ -676,8 +690,91 @@ General notes
 
 
 Function Get-ChiaNetworkInfo {
-
     _ChiaApiCall -api FullNode -function "get_network_info"
+}
+
+Function Get-ChiaBlockchainState {
+    $result=_ChiaApiCall -api FullNode -function "get_blockchain_state"
+    $result.blockchain_state
+}
+
+
+Function Get-ChiaBlocks {
+    param(
+        $start=0,
+        $end=9
+    )
+    $h_params=@{
+        start=$start
+        end=$end
+    }
+    $result=_ChiaApiCall -api FullNode -function "get_blocks" -params $h_params
+    $result.blocks
+}
+
+
+Function Get-ChiaBlockRecords {
+    param(
+        $start=0,
+        $end=9
+    )
+    $h_params=@{
+        start=$start
+        end=$end
+    }
+    $result=_ChiaApiCall -api FullNode -function "get_block_records" -params $h_params
+    $result.block_records
+}
+
+
+Function Get-ChiaAdditionsAndRemovals {
+    param(
+        [Parameter(ValueFromPipeline=$true)]
+        $header_hash
+    )
+
+    Begin{}
+
+    Process{
+        $header_hash | ForEach-Object {
+            $hHash=$_
+            if($hHash.GetType().Name -ne "String"){
+                $hHash=$hHash.header_hash
+            }
+            $h_params=@{
+                header_hash=$hHash
+                
+            }
+            $result=_ChiaApiCall -api FullNode -function "get_additions_and_removals" -params $h_params
+            $result | ForEach-Object {
+                $res=$_
+                foreach($prop in @("additions","removals")){
+                    for($i=0;$i -lt $result.$prop.count;$i++){
+                        Add-Member -InputObject $res.$prop[$i] -MemberType NoteProperty -Name DateTime `
+                            -Value ([timezone]::CurrentTimeZone.ToLocalTime(([datetime]'1/1/1970').AddSeconds($res.$prop[$i].timestamp))) -Force
+                        
+                    }
+                }
+                $res
+            }
+        }
+    }
+
+    End{}
+}
+
+
+Function Get-ChiaCoinRecordsByPuzzleHash {
+    param(
+        $puzzle_hash
+    )
+    $h_params=@{
+        puzzle_hash=$puzzle_hash
+        start_height=1267883
+        end_height=1267983
+    }
+    $result=_ChiaApiCall -api FullNode -function "get_coin_records_by_puzzle_hash" -params $h_params
+    $result.coin_records
 }
 
 
