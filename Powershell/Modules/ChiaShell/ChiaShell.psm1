@@ -1,4 +1,3 @@
-
 <#
     ChiaShell
     Implemented follow this: 
@@ -20,17 +19,85 @@ curl --insecure --cert ~/.chia/mainnet/config/ssl/wallet/private_wallet.crt \
 #>
 
 #You could get this settings out of config.yml. But for now thats enough
-
 if($psversionTable.PSVersion -lt "6.2"){
     #Requires -Modules PSPKI
 }
 
 #Requires -Modules Powershell-Yaml
 
+
+$global:thisModuleName = "ChiaShell"
+
+if($psversionTable.Platform -eq "Unix"){
+    $a_psModulePath=$env:PSModulePath -split ":"
+}
+else{
+    $a_psModulePath=$env:PSModulePath -split ";"
+}
+
+$global:ModConf=@{}
+$global:ModConf.${global:thisModuleName} = @{}
+
+$a_psModulePath | ForEach-Object {
+    $psModPath=$_
+    $modPath=($psModPath + "\" + $global:thisModuleName)
+    if(Test-Path ($modPath)){
+        $global:ModConf.${global:thisModuleName}.ModPath=$modPath
+    }
+}
+
+if ($psversionTable.Platform -eq "Unix") {
+    #Linux
+    #Unter Linux sind die Default Pfade anders 
+
+    if ( -not (Test-Path($env:HOME + "/.local/share/powershell/config" + "/" + $global:thisModuleName + ".config.ps1")) -and 
+              (Test-Path("/usr/local/share/powershell/config" + "/" + $global:thisModuleName + ".config.ps1"))
+    )
+    {
+        $Global:PowershellConfigDir = ("/usr/local/share/powershell/config")
+        $Global:PowershellDataDir = ("/usr/local/share/powershell/data")
+    }
+    else
+    {
+        $Global:PowershellConfigDir = ($env:HOME + "/.local/share/powershell/config")
+        $Global:PowershellDataDir = ($env:HOME + "/.local/share/powershell/data")
+    }
+
+}
+else{
+    if ( -not (Test-Path ($env:USERPROFILE + "\Documents\WindowsPowerShell\Config\" + $global:thisModuleName + ".config.ps1")) -and 
+              (Test-Path ($env:ProgramData + "\WindowsPowerShell\Config\"  + $global:thisModuleName + ".config.ps1"))) {
+        $Global:PowershellConfigDir = ($env:ProgramData + "\WindowsPowerShell\Config")
+        $Global:PowershellConfigDir = ($env:ProgramData + "\WindowsPowerShell\Data")
+    }
+    else {
+        $Global:PowershellConfigDir = ($env:USERPROFILE + "\Documents\WindowsPowerShell\Config")
+        $Global:PowershellDataDir = ($env:USERPROFILE + "\Documents\WindowsPowerShell\Data")
+    }
+}
+
+If (-not (Test-Path $Global:PowershellConfigDir)) {
+    mkdir $Global:PowershellConfigDir
+}
+If (-not (Test-Path $Global:PowershellDataDir)) {
+    mkdir $Global:PowershellDataDir
+}
+
+$global:ModConf.ChiaShell.ConfigDir=$Global:PowershellConfigDir
+$global:ModConf.ChiaShell.DataDir=$Global:PowershellDataDir
+
+
+
+If (-not (Test-Path $Global:PowershellConfigDir)) {
+    mkdir $Global:PowershellConfigDir
+}
+
+
+#Write Config File
+If (-not (Test-Path ($Global:PowershellConfigDir + "\" + $global:thisModuleName + ".config.ps1"))) {
+    Set-Content -Path ($Global:PowershellConfigDir + "\" + $global:thisModuleName + ".config.ps1") -Value (@'
 $chiaConfigFile=Get-Item "~/.chia/mainnet/config/config.yaml"
 $chiaConfig=Get-Content -Path $chiaConfigFile.FullName | ConvertFrom-Yaml
-
-
 
 $Global:ChiaShell=@{
     Api = @{
@@ -63,6 +130,19 @@ $Global:ChiaShell=@{
         SelectedWallet=$null
     }
 }
+'@
+)
+    . ($Global:PowershellConfigDir + "\" + $global:thisModuleName + ".config.ps1")
+
+}
+#Get existing Config File if exists  already
+else {
+    . ($Global:PowershellConfigDir + "\" + $global:thisModuleName + ".config.ps1")
+}
+
+
+
+
 
 
 $Global:ChiaShellArgumentCompleters=@{
@@ -701,8 +781,8 @@ Function Get-ChiaBlockchainState {
 
 Function Get-ChiaBlocks {
     param(
-        $start=0,
-        $end=9
+        $start=((Get-ChiaBlockchainState).peak.height - 100),
+        $end=((Get-ChiaBlockchainState).peak.height)
     )
     $h_params=@{
         start=$start
@@ -715,8 +795,8 @@ Function Get-ChiaBlocks {
 
 Function Get-ChiaBlockRecords {
     param(
-        $start=0,
-        $end=9
+        $start=((Get-ChiaBlockchainState).peak.height - 100),
+        $end=((Get-ChiaBlockchainState).peak.height)
     )
     $h_params=@{
         start=$start
@@ -766,17 +846,130 @@ Function Get-ChiaAdditionsAndRemovals {
 
 Function Get-ChiaCoinRecordsByPuzzleHash {
     param(
-        $puzzle_hash
+        [Parameter(Mandatory=$true)]
+        $puzzle_hash,
+        #TODO get height from current height
+        $start_height=((Get-ChiaBlockchainState).peak.height - 100),
+        $end_height=((Get-ChiaBlockchainState).peak.height)
     )
     $h_params=@{
         puzzle_hash=$puzzle_hash
-        start_height=1267883
-        end_height=1267983
+        start_height=$start_height
+        end_height=$end_height
     }
     $result=_ChiaApiCall -api FullNode -function "get_coin_records_by_puzzle_hash" -params $h_params
     $result.coin_records
 }
 
+
+function Get-ChiaOfferSummary {
+    [CmdletBinding()]
+    param (
+        [Parameter(ValueFromPipeline=$true)]
+        $offer
+    )
+    
+    begin {
+        $aFiles=@()
+    }
+    
+    process {
+        if($null -ne $file){
+            $offer | ForEach-Object {
+                $oFile=$_
+                if($oFile.GetType().Name -eq "String"){
+                    $oFile=Get-Item -Path $oFile
+                }
+                $aFiles+=$oFile
+            }
+        }
+    }
+    
+    end {
+        if($aFiles.count -gt 0){
+            $aFiles | ForEach-Object {
+                $file=$_
+                $fileContent=(Get-Content $file.FullName) -join "`r`n"
+
+                $h_params=@{
+                    offer=$fileContent
+                }
+                $result=_ChiaApiCall -api Wallet -function "get_offer_summary" -params $h_params
+                $summary=$result.summary
+                Add-Member -InputObject $summary -MemberType NoteProperty -Name File -Value $file
+                $summary
+            }
+
+        }
+    }
+}
+
+
+function Confirm-ChiaOffer {
+    [CmdletBinding()]
+    param (
+        [Parameter(ValueFromPipeline=$true)]
+        $offer,
+        $fee=0,
+        [switch]$Confirm=$true
+    )
+    
+    begin {
+        $aFiles=@()
+    }
+    
+    process {
+        if($null -ne $file){
+            $offer | ForEach-Object {
+                $oFile=$_
+                if($oFile.GetType().Name -eq "String"){
+                    $oFile=Get-Item -Path $oFile
+                }
+                elseif($oFile.GetType().Name -eq "PSCustomObject"){
+                    $oFile=$oFile.File
+                }
+                $aFiles+=$oFile
+            }
+        }
+    }
+    
+    end {
+        if($aFiles.count -gt 0){
+            $aFiles | ForEach-Object {
+                $file=$_
+                $fileContent=(Get-Content $file.FullName) -join "`r`n"
+
+
+                Write-Host("Offer Summary:")
+                Write-Host(Get-ChiaOfferSummary -offer $file | Format-List | Out-String)
+                
+                $doit=$false
+                if($Confirm){
+                    Write-Host("This will take this Offer")
+                    $answer=Read-Host -Prompt "Are you sure? (y|n)"
+                    if($answer -eq "y"){$doit=$true}
+                }
+                else{
+                    $doit=$true
+                }
+
+                if($doit){
+                    $h_params=@{
+                        offer=$fileContent
+                        fee=$fee
+                    }
+                    $result=_ChiaApiCall -api Wallet -function "take_offer" -params $h_params
+                    if($result.success){
+                        $result.trade_record
+                    }
+                    else{
+                        $false
+                    }
+                }
+            }
+        }
+    }
+}
 
 Register-ArgumentCompleter -CommandName Get-ChiaWalletBalance -ParameterName wallet_id -ScriptBlock $Global:ChiaShellArgumentCompleters.WalletId
 Register-ArgumentCompleter -CommandName _ChiaApiCall -ParameterName api -ScriptBlock $Global:ChiaShellArgumentCompleters.ApiName
