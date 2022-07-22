@@ -1,13 +1,21 @@
-$myAddress="myAddress"
-#0.000000000001 is one Mojo
-# 1e12 Mojo is one XCH
-#Amount to Split each
-$amount=0.03 * 1e12
-#Fee per Transaction
-$fee=0
-$memo="coinSplit"
-#How many times do we split
-$splitTimes=2
+param(
+    [Parameter(Mandatory=$true)]
+    $myAddress,
+    
+    #0.000000000001 is one Mojo
+    # 1e12 Mojo is one XCH
+    #Amount to Split each
+    [Parameter(Mandatory=$true)]
+    $XchAmount,
+
+    #Fee per Transaction
+    $fee=0,
+    $memo="coinSplit",
+    #How many times do we split
+    $splitTimes=2
+)
+
+$amount=$XchAmount * 1e12
 
 $wallet=Get-ChiaWallets | Where-Object name -eq "Chia Wallet"
 
