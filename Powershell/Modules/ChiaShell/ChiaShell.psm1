@@ -84,8 +84,11 @@ If (-not (Test-Path $Global:PowershellDataDir)) {
 }
 
 $global:ModConf.ChiaShell.ConfigDir=$Global:PowershellConfigDir
-$global:ModConf.ChiaShell.DataDir=$Global:PowershellDataDir
+$global:ModConf.ChiaShell.DataDir=$Global:PowershellDataDir + "/" + "ChiaShell"
 
+if(-not (Test-Path $global:ModConf.ChiaShell.DataDir)){
+    mkdir $global:ModConf.ChiaShell.DataDir
+}
 
 
 If (-not (Test-Path $Global:PowershellConfigDir)) {
@@ -142,6 +145,16 @@ else {
 
 
 
+$global:ModConf.ChiaShell
+$global:ModConf.ChiaShell.Add("values",@{})
+
+$global:ModConf.ChiaShell.values.wallet_types = @{
+    "Chia" = 0
+    "Pool" = 9
+    "CAT" = 6
+    "NFT" = 10
+    "DID" = 8
+}
 
 
 
@@ -183,7 +196,20 @@ $Global:ChiaShellArgumentCompleters=@{
         else{
             (Get-ChiaWallets | Where-Object{$_.type -eq 10}).id
         }
-        
+    }
+    WalletType = {
+        param($commandName, $parameterName, $wordToComplete, $commandAst, $fakeBoundParameters)
+        $list=$global:ModConf.ChiaShell.values.wallet_types.GetEnumerator()
+
+        if($wordToComplete -ne ''){
+            $out=$list | Where-Object{$_.Name -like ("*" + $wordToComplete + "*")}
+        }
+        else{
+            $out=$list
+        }
+        $out | ForEach-Object{
+            ('"' + $_.Name + '" <# ' + $_.Value + ' #>')
+        }
     }
 }
 
@@ -262,7 +288,8 @@ General notes
     param(
         $api="Wallet",
         $function,
-        $params
+        $params,
+        $timeoutSec=30
     )
 
     #-Body ($params | ConvertTo-Json)
@@ -277,18 +304,26 @@ General notes
         }
     }
 
+    Try{
+
     #Windows Powershell 5.1 Workaround
     if($psversionTable.PSVersion -lt [system.version]::New("6.0")){
         #TODO maybe Get JSON manually to get deeper Data Structure
         $result=Invoke-RestMethod -Uri ("https://"+ $Global:ChiaShell.Api.$api.Host +":" + $Global:ChiaShell.Api.$api.Port + "/$function") `
-            -Method "POST"  `
+            -Method "POST" `
+            -TimeoutSec $timeoutSec `
             -Certificate (Get-ChiaCert -api $api) @h_args
     }
     else{
         $result=Invoke-RestMethod -Uri ("https://"+ $Global:ChiaShell.Api.$api.Host +":" + $Global:ChiaShell.Api.$api.Port + "/$function") `
             -Method "POST"  `
             -SkipCertificateCheck `
-            -Certificate (Get-ChiaCert -api $api) @h_args
+            -TimeoutSec $timeoutSec `
+            -Certificate (Get-ChiaCert -api $api) @h_args 
+    }
+
+    }Catch{
+        Write-Error("Error in API Call to $api :" + $_)
     }
 
     
@@ -303,9 +338,18 @@ General notes
 
 Function Get-ChiaWallets {
     [CmdletBinding()]
+    param(
+        $wallet_type
+    )
 
     $result = _ChiaApiCall -api wallet -function "get_wallets"
-    $result.wallets
+
+    if($null -ne $wallet_type){
+        $result.wallets | Where-Object{$_.type -eq $global:ModConf.ChiaShell.values.wallet_types.$wallet_type} 
+    }
+    else{
+        $result.wallets
+    }
 }
 
 
@@ -331,6 +375,7 @@ Function Use-ChiaKey {
 Function Show-ChiaWallets {
     [CmdletBinding()]
     param(
+        $wallet_type,
         [ValidateSet("Select","Table","List","Grid")]
         $View="Select",
         $Columns=@("id","name","type")
@@ -338,23 +383,59 @@ Function Show-ChiaWallets {
 
     Switch($View){
         "Select" {
-            Get-ChiaWallets | Select-Object $Columns
+            Get-ChiaWallets -wallet_type $wallet_type | Select-Object $Columns
             break
         }
         "Table" {
-            Get-ChiaWallets | Format-Table $Columns
+            Get-ChiaWallets -wallet_type $wallet_type | Format-Table $Columns
             break
         }
         "List" {
-            Get-ChiaWallets | Format-List $Columns
+            Get-ChiaWallets -wallet_type $wallet_type | Format-List $Columns
             break
         }
         "Grid" {
-            Get-ChiaWallets | Select-Object $Columns | Out-ConsoleGridView
+            Get-ChiaWallets -wallet_type $wallet_type | Select-Object $Columns | Out-ConsoleGridView
             break
         }
     }
 }
+
+
+Function Get-ChiaDidWallet {
+    Show-ChiaWallets -wallet_type "DID" <# 8 #> -Columns @("id","name","type") | ForEach-Object {
+        $didWallet=$_
+        Add-Member -InputObject $didWallet -MemberType NoteProperty -Name my_did -Value (Get-ChiaDid -wallet_ids $didWallet.id).my_did
+        $didWallet
+    }
+}
+
+
+Function Get-ChiaDid {
+    [CmdletBinding()]
+    param(
+        $wallet_ids=(Get-ChiaWallets -wallet_type "DID").id
+    )
+
+    $wallet_ids | ForEach-Object {
+        $wallet_id=$_
+        $h_params=@{
+            wallet_id=$wallet_id
+        }
+        $result = _ChiaApiCall -api wallet -function "did_get_did" -params $h_params
+        $result
+    }
+
+}
+
+Function Set-ChiaNftDid {
+    param(
+        $nft_wallet_id,
+        $nft_coin_id,
+        $new_did
+    )
+}
+
 
 Function Select-ChiaWallet {
     [CmdletBinding()]
@@ -391,7 +472,12 @@ Function Get-ChiaNfts {
         }
 
         $result = _ChiaApiCall -api wallet -function "nft_get_nfts" -params $h_params
-        $result.nft_list
+        $result.nft_list | ForEach-Object {
+            $nft=$_
+            Add-Member -InputObject $nft -MemberType NoteProperty -Name "nft_wallet_id" -Value $wallet_id -Force
+            $nft
+        }
+        
     }
 }
 
@@ -404,7 +490,7 @@ Function Show-ChiaNfts {
             label='CollectionName'
             expression={($_.collection.name)}
           },
-          "description","nft_coin_id")
+          "description","nft_coin_id","nft_wallet_id")
     )
     $result = Get-ChiaNfts -wallet_id $wallet_id
     
@@ -413,9 +499,8 @@ Function Show-ChiaNfts {
         "Metadata"{
             $result | ForEach-Object {
                 $nft=$_
-                $metadata=Invoke-RestMethod -Uri $nft.metadata_uris[0]
-                $metadata | Add-Member -MemberType "NoteProperty" -Name "nft_coin_id" -Value ($_.nft_coin_id)
-                $metadata | Add-Member -MemberType "NoteProperty" -Name "SpaceScanLink" -Value ("https://www.spacescan.io/xch/coin/" + $_.nft_coin_id)
+                $metadata=Get-ChiaNftMetadata -nft $nft
+                $metadata | Add-Member -MemberType "NoteProperty" -Name "nft_wallet_id" -Value $_.nft_wallet_id
                 $metadata | Select-Object $Columns
             }
         }
@@ -434,9 +519,7 @@ Function Show-ChiaNfts {
         "Grid" {
             $result | ForEach-Object {
                 $nft=$_
-                $metadata=Invoke-RestMethod -Uri $nft.metadata_uris[0]
-                $metadata | Add-Member -MemberType "NoteProperty" -Name "nft_coin_id" -Value ($_.nft_coin_id)
-                $metadata | Add-Member -MemberType "NoteProperty" -Name "SpaceScanLink" -Value ("https://www.spacescan.io/xch/coin/" + $_.nft_coin_id)
+                $metadata=Get-ChiaNftMetadata -nft $nft
                 $metadata
             } | Select-Object $Columns | Out-ConsoleGridView
             break
@@ -498,20 +581,14 @@ Function Get-ChiaTransaction {
 }
 
 
-Function Get-ChiaAllOffers {
+Function Get-ChiaOffers {
     [CmdletBinding()]
     param(
-        $start=0,
-        $end=100
     )
 
-    $h_params=@{
-        start=$start
-        end=$end
-    }
+    $h_params=@{}
 
-
-    $result = _ChiaApiCall -api wallet -function "get_all_offers" -params $h_params
+    $result = _ChiaApiCall -api wallet -function "get_all_offers"
     $result.trade_records
 }
 
@@ -530,7 +607,7 @@ Parameter description
 Parameter description
 
 .EXAMPLE
-Show-ChiaAllOffers | Where-Object status -eq "PENDING_ACCEPT" | Remove-Offer
+Show-ChiaOffers | Where-Object status -eq "PENDING_ACCEPT" | Remove-Offer
 
 ```text
 trade_id                                                           success
@@ -578,7 +655,7 @@ General notes
     }
 }
 
-Function Show-ChiaAllOffers {
+Function Show-ChiaOffers {
 <#
 .SYNOPSIS
 Short description
@@ -593,7 +670,7 @@ Parameter description
 Parameter description
 
 .EXAMPLE
-Show-ChiaAllOffers | %{Get-ChiaNftInfo -coin_id $_.requested_item} | %{Start-Process $_.data_uris[0]}
+Show-ChiaOffers | %{Get-ChiaNftInfo -coin_id $_.requested_item} | %{Start-Process $_.data_uris[0]}
 
 .NOTES
 General notes
@@ -603,7 +680,7 @@ General notes
         $start=0,
         $end=100
     )
-    $offers=Get-ChiaAllOffers -start $start -end $end
+    $offers=Get-ChiaOffers -start $start -end $end
     $offers | ForEach-Object {
         $offer=$_
         [PSCustomObject]@{
@@ -639,19 +716,165 @@ Function Get-ChiaTransaction {
 Function Get-ChiaNftInfo {
     [CmdletBinding()]
     param(
-        [Parameter(Mandatory=$true)]
+        [Parameter(Mandatory=$true,ValueFromPipeline=$true)]
         [Alias("NftId")]
-        [string]$coin_id
+        [string]$coin_ids
     )
 
-    $h_params=@{
-        coin_id=$coin_id
+    Begin{
+        $NftCacheDir=$global:ModConf.ChiaShell.DataDir + "/nft"
+        if(-not (Test-Path $NftCacheDir)){
+            mkdir $NftCacheDir
+        }
     }
 
-    $result = _ChiaApiCall -api wallet -function "nft_get_info" -params $h_params
-    $result.nft_info
+    Process{
+        $coin_ids | ForEach-Object {
+            $coin_id=$_
+            if($null -ne $coin_id.coin_id){
+                $coin_id=$coin_id.coin_id
+            }
+
+            $h_params=@{
+                coin_id=$coin_id
+            }
+        
+            $cacheFilePath=($NftCacheDir + "/" + $coin_id + ".cli.xml")
+            if(Test-Path $cacheFilePath){
+                $nftInfo=Import-CliXml -Path $cacheFilePath
+            }
+            else{
+                $result = _ChiaApiCall -api wallet -function "nft_get_info" -params $h_params
+                $nftInfo=$result.nft_info
+                $nftInfo | Export-Clixml -Path $cacheFilePath
+            }
+            #Ausgabe
+            $nftInfo
+    
+        }
+    }
+
+    End{}
 }
 
+
+Function Show-ChiaNftInfo {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory=$true,ValueFromPipeline=$true)]
+        [Alias("NftId")]
+        [string]$coin_ids,
+        $View="Metadata",
+        $Columns=@("name",@{
+            label='CollectionName'
+            expression={($_.collection.name)}
+          },
+          "description","nft_coin_id")
+    )
+    $result = Get-ChiaNftInfo -coin_ids $coin_ids
+    
+
+    Switch($View){
+        "Metadata"{
+            $result | ForEach-Object {
+                $nft=$_
+                Get-ChiaNftMetadata -nft $nft
+            } | Select-Object $Columns
+        }
+        "Select" {
+            $result  | Select-Object $Columns
+            break
+        }
+        "Table" {
+            $result  | Format-Table $Columns
+            break
+        }
+        "List" {
+            $result  | Format-List $Columns
+            break
+        }
+        "Grid" {
+            $result | ForEach-Object {
+                $nft=$_
+                Get-ChiaNftMetadata -nft $nft
+            } | Select-Object $Columns | Out-ConsoleGridView
+            break
+        }
+    }
+}
+
+Function Get-ChiaNftMetadata {
+    param(
+        $nft
+    )
+    $metadata=$null
+    $MetadataCacheDir=$global:ModConf.ChiaShell.DataDir + "/nft_metadata"
+    if(-not (Test-Path $MetadataCacheDir)){mkdir $MetadataCacheDir}
+    $cacheFilePath=($MetadataCacheDir + "/" + $nft.nft_coin_id + ".cli.xml")
+
+    if(Test-Path -Path $cacheFilePath){
+        $metadata=Import-Clixml -Path $cacheFilePath
+        $metadata
+    }
+    else{
+        for($i=0;$i -lt $nft.metadata_uris.Count -and $null -eq $metadata;$i++){
+            Write-Verbose ("Trying Metadata Uri: " + $nft.metadata_uris[$i])
+            $metadata=Invoke-RestMethod -Uri $nft.metadata_uris[$i]
+        }
+        if($null -ne $metadata){
+            $metadata | Add-Member -MemberType "NoteProperty" -Name "nft_coin_id" -Value ($nft.nft_coin_id)
+            $metadata | Add-Member -MemberType "NoteProperty" -Name "SpaceScanLink" -Value ("https://www.spacescan.io/xch/coin/" + $nft.nft_coin_id)
+            $metadata | Export-Clixml -Path $cacheFilePath
+            $metadata
+        }
+    }
+}
+
+Function Show-ChiaNftOffers {
+    [CmdletBinding()]
+    param(
+        [ValidateSet("offered","requested")]
+        $offerType="offered"
+    )
+    
+
+    (Get-ChiaOffers) | Where-Object {$_.summary.$offerType.PsObject.Properties.Name.Length -gt 5} | forEach-Object{
+        $offer=$_
+        #$offer.summary.$offerType.PsObject.Properties.Name
+        $nftInfo=Show-ChiaNftInfo -coin_ids ("0x"+$offer.summary.$offerType.PsObject.Properties.Name)
+        #$offer
+
+        if($offerType -eq "offered"){
+            [PSCustomObject][ordered]@{
+                offered_name = $nftInfo.name
+                requested = $offer.summary.requested
+                status = $offer.status
+                nft_info = $nftInfo
+                trade_id = $offer.trade_id
+            }
+        }
+        if($offerType -eq "requested"){
+            [PSCustomObject][ordered]@{
+                requested_name = $nftInfo.name
+                offered= $offer.summary.offered
+                status = $offer.status
+                nft_info = $nftInfo
+                trade_id = $offer.trade_id
+            }
+
+        }
+    }
+}
+
+Function Select-ChiaNftOffers{
+    [CmdletBinding()]
+    param(
+        [ValidateSet("offered","requested")]
+        $offerType="offered"
+    )
+
+    Show-ChiaNftOffers -offerType $offerType | Out-ConsoleGridView
+}
 
 Function Send-ChiaTransaction {
 <#
@@ -1061,3 +1284,6 @@ Register-ArgumentCompleter -CommandName _ChiaApiCall -ParameterName api -ScriptB
 Register-ArgumentCompleter -CommandName Get-ChiaNfts -ParameterName "wallet_id" -ScriptBlock $Global:ChiaShellArgumentCompleters.NftWallet
 Register-ArgumentCompleter -CommandName Show-ChiaNfts -ParameterName "wallet_id" -ScriptBlock $Global:ChiaShellArgumentCompleters.NftWallet
 Register-ArgumentCompleter -CommandName Select-ChiaNfts -ParameterName "wallet_id" -ScriptBlock $Global:ChiaShellArgumentCompleters.NftWallet
+
+Register-ArgumentCompleter -CommandName Get-ChiaWallets -ParameterName wallet_type -ScriptBlock $Global:ChiaShellArgumentCompleters.WalletType
+Register-ArgumentCompleter -CommandName Show-ChiaWallets -ParameterName wallet_type -ScriptBlock $Global:ChiaShellArgumentCompleters.WalletType
