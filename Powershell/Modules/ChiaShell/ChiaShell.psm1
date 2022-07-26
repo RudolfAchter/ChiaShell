@@ -252,7 +252,9 @@ General notes
     param(
         $api="Wallet",
         $function,
-        $params
+        $params,
+        [ValidateSet("error","info","verboseonly")]
+        $errorType="error"
     )
 
     #-Body ($params | ConvertTo-Json)
@@ -281,12 +283,71 @@ General notes
             -Certificate (Get-ChiaCert -api $api) @h_args
     }
 
-    
-    if($result.error){
-        Write-Error $result.error
+    Switch($errorType){
+        "error"{
+            if($result.error){
+                Write-Error $result.error
+            }
+            break
+        }
+
+        "info"{
+            if($result.error){
+                Write-Host $result.error
+            }
+        }
+
+        "verboseonly"{
+            if($result.error){
+                Write-Verbose $result.error
+            }
+        }
     }
+    
 
     $result
+
+}
+
+
+Function Get-ChiaBlockHeight {
+    param(
+        $Date=(Get-Date)
+    )
+    <#
+        Chia Mainnet Start at '2021-03-19 14:00'
+        One Block per 18.75 seconds
+    #>
+    if($Date.GetType().Name -eq "String"){
+        $Date=Get-Date $Date
+    }
+
+    $chiaMainnetStart='2021-03-19 14:00'
+    $secPerBlock=18.75
+
+    $mainnetStart=[timezone]::CurrentTimeZone.ToLocalTime(([datetime]$chiaMainnetStart))
+    
+    $diff=$Date - $mainnetStart
+    [int]$calculatedHeight=$diff.TotalSeconds / $secPerBlock
+
+    $blocks=Get-ChiaBlocks -start ($calculatedHeight-100) -end $calculatedHeight
+    $block=$blocks | Where-Object {$_.foliage_transaction_block} | Select-Object -First 1
+
+    $blockDate=([timezone]::CurrentTimeZone.ToLocalTime(([datetime]'1/1/1970').AddSeconds($block.foliage_transaction_block.timestamp)))
+
+    $diff=$Date - $blockDate
+    [int]$calcAdd=$diff.TotalSeconds / $secPerBlock
+
+    $blockHeightResult=[int]$calculatedHeight + [int]$calcAdd
+    $blocks=Get-ChiaBlocks -start ($blockHeightResult-100) -end $blockHeightResult
+    $block=$blocks | Where-Object {$_.foliage_transaction_block} | Select-Object -First 1
+
+    $blockDate=([timezone]::CurrentTimeZone.ToLocalTime(([datetime]'1/1/1970').AddSeconds($block.foliage_transaction_block.timestamp)))
+
+    [PSCustomObject]@{
+        BlockHeight = $blockHeightResult
+        BlockDate = $blockDate
+    }
 
 }
 
@@ -781,7 +842,7 @@ Function Get-ChiaBlockchainState {
 
 Function Get-ChiaBlocks {
     param(
-        $start=((Get-ChiaBlockchainState).peak.height - 100),
+        $start=((Get-ChiaBlockchainState).peak.height - 20),
         $end=((Get-ChiaBlockchainState).peak.height)
     )
     $h_params=@{
@@ -792,10 +853,20 @@ Function Get-ChiaBlocks {
     $result.blocks
 }
 
+Function Get-ChiaBlock {
+    param(
+        $header_hash
+    )
+    $h_params=@{
+        header_hash=$header_hash
+    }
+    $result=_ChiaApiCall -api FullNode -function "get_block" -params $h_params
+    $result.block
+}
 
 Function Get-ChiaBlockRecords {
     param(
-        $start=((Get-ChiaBlockchainState).peak.height - 100),
+        $start=((Get-ChiaBlockchainState).peak.height - 20),
         $end=((Get-ChiaBlockchainState).peak.height)
     )
     $h_params=@{
@@ -849,7 +920,7 @@ Function Get-ChiaCoinRecordsByPuzzleHash {
         [Parameter(Mandatory=$true)]
         $puzzle_hash,
         #TODO get height from current height
-        $start_height=((Get-ChiaBlockchainState).peak.height - 100),
+        $start_height=((Get-ChiaBlockchainState).peak.height - 20),
         $end_height=((Get-ChiaBlockchainState).peak.height)
     )
     $h_params=@{
@@ -971,5 +1042,172 @@ function Confirm-ChiaOffer {
     }
 }
 
+function Get-ChiaNftRecords {
+    [CmdletBinding()]
+    param(
+        $start=((Get-ChiaBlockchainState).peak.height - 20),
+        $end=((Get-ChiaBlockchainState).peak.height)
+    )
+    
+    begin {
+        
+    }
+    
+    process {
+        
+    }
+    
+    end {
+        Get-ChiaBlocks -start $start -end $end | 
+            Get-ChiaAdditionsAndRemovals | 
+            ForEach-Object {
+                $record=$_
+                $record.additions
+                $record.removals
+        } | Where-Object {$_.coin.amount -eq 1}
+    }
+}
+
+
+function Get-ChiaNftInfo {
+<#
+.SYNOPSIS
+Short description
+
+.DESCRIPTION
+Long description
+
+.PARAMETER coin_id
+Parameter description
+
+.PARAMETER errorType
+Parameter description
+
+.EXAMPLE
+$start=(Get-ChiaBlockHeight -Date "2022-05-01").BlockHeight
+Get-ChiaNftRecords -start $start | Get-ChiaNftInfo
+
+.NOTES
+General notes
+#>
+    [CmdletBinding()]
+    param (
+        [Parameter(ValueFromPipeline=$true)]
+        $coin_id,
+        [ValidateSet("info","verboseonly","error")]
+        $errorType="verboseonly"
+    )
+    begin {
+        
+    }
+    
+    process {
+        $coin_id | ForEach-Object {
+            $coin=$_
+            if($null -ne $coin.coin.parent_coin_info){
+                $s_coin_id=$coin.coin.parent_coin_info
+            }
+            else{
+                $s_coin_id=$coin
+            }
+
+            #Write-Host ("s_coin_id: " + $s_coin_id)
+
+            $h_params=@{
+                coin_id=$s_coin_id
+            }
+            $result=_ChiaApiCall -api Wallet -function "nft_get_info" -params $h_params -errorType $errorType
+            $result.nft_info
+        }
+    }
+    
+    end {
+        
+    }
+}
+
+
+function Show-Tree
+{
+    [CmdletBinding()]
+    [Alias("tree")]
+    [OutputType([string[]])]
+    Param
+    (
+        [Parameter(Position=0)]
+        $Path = (pwd),
+
+        [Parameter()]
+        [int]$MaxDepth=[int]::MaxValue,
+
+        #Show the full name of the directory at each sublevel
+        [Parameter()]
+        [Switch]$ShowDirectory, 
+
+        #List of wildcard matches. If a directoryname matches one of these, it will be skipped.
+        [Parameter()]
+        [String[]]$NotLike = $null,
+ 
+        #List of wildcard matches. If a directoryname matches one of these, it will be shown.
+        [Parameter()]
+        [String[]]$Like = $null,
+ 
+        #Internal parameter used in recursion for formating purposes
+        [Parameter()]
+        [int]$_Depth=0
+    )
+
+    if ($_Depth -ge $MaxDepth)
+    {
+        return
+    }
+    $FirstDirectoryShown = $False
+    $start = "| " * $_Depth
+    :NextDirectory foreach ($d in Get-ChildItem $path -ErrorAction Ignore |where PSIsContainer -eq $true)
+    {
+        foreach ($pattern in $NotLike)
+        {
+            if ($d.PSChildName -like $pattern)
+            {
+                Write-Verbose "Skipping $($d.PSChildName). Not like $Pattern"
+                continue NextDirectory;
+            }
+        }
+        $ShowThisDirectory = $false
+        if (!$like)
+        {
+            $ShowThisDirectory = $true
+        }else
+        {
+            foreach ($pattern in $Like)
+            {
+                if ($d.PSChildName -like $pattern)
+                {
+                    Write-Verbose "Including $($d.PSChildName). Like $Pattern"
+                    $ShowThisDirectory = $true
+                    Break;
+                }
+            }            
+        }
+        # When we dir a Get-ChildItem, we get the OS view of the object so here we need to transform
+        # it into the PowerShell view of the path (e.g. to deal with PSDrives with deep ROOT directories)
+        $ProviderPath     = $ExecutionContext.SessionState.Path.GetResolvedProviderPathFromPSPath($d.PSPath, [Ref]$d.PSProvider)
+        $RootRelativePath = $ProviderPath.SubString($d.PSDrive.Root.Length)
+        $PSDriveFullPath  = Join-Path ($d.PSDrive.Name + ":") $RootRelativePath
+
+        if ($ShowThisDirectory)
+        {
+            if (($FirstDirectoryShown -eq $FALSE) -and $ShowDirectory)
+            {
+                $FirstDirectoryShown = $True
+                Write-Output ("{0}{1}" -f $start,$Path)
+            }
+            Write-Output ("{0}+---{1}" -f $start, (Split-Path $PSDriveFullPath -Leaf))
+        }
+        show-Tree -path:$PSDriveFullPath -_Depth:($_Depth + 1) -ShowDirectory:$ShowDirectory -MaxDepth:$MaxDepth -NotLike:$NotLike -Like:$Like
+    }    
+}
+
 Register-ArgumentCompleter -CommandName Get-ChiaWalletBalance -ParameterName wallet_id -ScriptBlock $Global:ChiaShellArgumentCompleters.WalletId
 Register-ArgumentCompleter -CommandName _ChiaApiCall -ParameterName api -ScriptBlock $Global:ChiaShellArgumentCompleters.ApiName
+
