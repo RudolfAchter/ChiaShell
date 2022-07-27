@@ -6,7 +6,7 @@ if(-not (Test-Path $destBase)){
     New-Item -Path $destBase -ItemType Directory
 }
 
-Get-Item "nft/*.json" | ForEach-Object{
+Get-Item "$sourceDir/*.json" | ForEach-Object{
     $file=$_
     Get-Content $file | ConvertFrom-Json | ForEach-Object {
         $nft=$_
@@ -18,7 +18,13 @@ Get-Item "nft/*.json" | ForEach-Object{
             if(-not (Test-Path $destDir)){
                 New-Item -Path $destDir -ItemType Directory
             }
-            $file | Copy-Item -Destination ($destDir) -PassThru
+
+            if(-not (Test-Path ($destDir + "/" + $file.Name))){
+                $existingFile=($destDir + "/" + $file.Name)
+                if($existingFile.LastWriteTime -lt $file.LastWriteTime){
+                    $file | Copy-Item -Destination ($destDir) -PassThru
+                }
+            }
         }
     }
 }

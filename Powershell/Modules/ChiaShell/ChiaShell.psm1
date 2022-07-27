@@ -19,9 +19,7 @@ curl --insecure --cert ~/.chia/mainnet/config/ssl/wallet/private_wallet.crt \
 #>
 
 #You could get this settings out of config.yml. But for now thats enough
-if($psversionTable.PSVersion -lt "6.2"){
-    #Requires -Modules PSPKI
-}
+
 
 #Requires -Modules Powershell-Yaml
 
@@ -263,6 +261,12 @@ Function Get-ChiaCert {
         $cert=[System.Security.Cryptography.X509Certificates.X509Certificate2]::CreateFromPemFile($clientCert,$clientKey)
     }
     else{
+        if($psversionTable.PSVersion -lt "6.2"){
+            $module=Get-Module PSPKI
+            if($null -eq $module){
+                Import-Module PSPKI
+            }
+        }
         # Old Windows 10 Clients
         # But Windows 10 only has .NET Framework 4.8 (Windows 10)
         # Powershell Module PSPKI (Workaround). Certificate Handling in Microsoft .Net Framework seems to be a mess
@@ -303,7 +307,8 @@ General notes
         $function,
         $params,
         [ValidateSet("error","info","verboseonly")]
-        $errorType="error"
+        $errorType="error",
+        $timeoutSec=30
     )
 
     #-Body ($params | ConvertTo-Json)
@@ -918,6 +923,26 @@ Function Get-ChiaTransaction {
 
 
 Function Get-ChiaNftInfo {
+<#
+.SYNOPSIS
+Short description
+
+.DESCRIPTION
+Long description
+
+.PARAMETER coin_id
+Parameter description
+
+.PARAMETER errorType
+Parameter description
+
+.EXAMPLE
+$start=(Get-ChiaBlockHeight -Date "2022-05-01").BlockHeight
+Get-ChiaNftRecords -start $start | Get-ChiaNftInfo
+
+.NOTES
+General notes
+#>
     [CmdletBinding()]
     param(
         [Parameter(Mandatory=$true,ValueFromPipeline=$true)]
@@ -927,15 +952,21 @@ Function Get-ChiaNftInfo {
     )
 
     Begin{
+
+        #Write-Host("Totaler Blödsinn zum testen")
+
         $NftCacheDir=$global:ModConf.ChiaShell.DataDir + "/nft"
         if(-not (Test-Path $NftCacheDir)){
-            mkdir $NftCacheDir
+            New-Item -ItemType Directory -Path $NftCacheDir
         }
     }
 
     Process{
         $coin_ids | ForEach-Object {
             $coin_id=$_
+
+            #Write-Host("coin_id:" + $coin_id)
+
             if($null -ne $coin_id.nft_coin_id){
                 $coin_id=$coin_id.nft_coin_id
             }
@@ -946,13 +977,15 @@ Function Get-ChiaNftInfo {
             $h_params=@{
                 coin_id=$coin_id
             }
+
+            #Write-Host($h_params.coin_id)
         
             $cacheFilePath=($NftCacheDir + "/" + $coin_id + ".cli.xml")
             if((Test-Path $cacheFilePath) -and (-not $NoCache)){
                 $nftInfo=Import-CliXml -Path $cacheFilePath
             }
             else{
-                $result = _ChiaApiCall -api wallet -function "nft_get_info" -params $h_params
+                $result = _ChiaApiCall -api wallet -function "nft_get_info" -params $h_params -errorType verboseonly
                 $nftInfo=$result.nft_info
                 $nftInfo | Export-Clixml -Path $cacheFilePath
             }
@@ -1030,7 +1063,8 @@ General notes
 #>
     param(
         [Parameter(ValueFromPipeline=$true)]
-        $nfts
+        $nfts,
+        $TimeoutSec=5
     )
 
     Begin{}
@@ -1056,7 +1090,7 @@ General notes
             else{
                 for($i=0;$i -lt $nft.metadata_uris.Count -and $null -eq $metadata;$i++){
                     Write-Verbose ("Trying Metadata Uri: " + $nft.metadata_uris[$i])
-                    $metadata=Invoke-RestMethod -Uri $nft.metadata_uris[$i]
+                    $metadata=Invoke-RestMethod -Uri $nft.metadata_uris[$i] -TimeoutSec $TimeoutSec
                 }
                 if($null -ne $metadata){
                     $metadata | Add-Member -MemberType "NoteProperty" -Name "nft_coin_id" -Value ($nft.nft_coin_id)
@@ -1555,65 +1589,6 @@ function Get-ChiaNftRecords {
         } | Where-Object {$_.coin.amount -eq 1}
     }
 }
-
-
-function Get-ChiaNftInfo {
-<#
-.SYNOPSIS
-Short description
-
-.DESCRIPTION
-Long description
-
-.PARAMETER coin_id
-Parameter description
-
-.PARAMETER errorType
-Parameter description
-
-.EXAMPLE
-$start=(Get-ChiaBlockHeight -Date "2022-05-01").BlockHeight
-Get-ChiaNftRecords -start $start | Get-ChiaNftInfo
-
-.NOTES
-General notes
-#>
-    [CmdletBinding()]
-    param (
-        [Parameter(ValueFromPipeline=$true)]
-        $coin_id,
-        [ValidateSet("info","verboseonly","error")]
-        $errorType="verboseonly"
-    )
-    begin {
-        
-    }
-    
-    process {
-        $coin_id | ForEach-Object {
-            $coin=$_
-            if($null -ne $coin.coin.parent_coin_info){
-                $s_coin_id=$coin.coin.parent_coin_info
-            }
-            else{
-                $s_coin_id=$coin
-            }
-
-            #Write-Host ("s_coin_id: " + $s_coin_id)
-
-            $h_params=@{
-                coin_id=$s_coin_id
-            }
-            $result=_ChiaApiCall -api Wallet -function "nft_get_info" -params $h_params -errorType $errorType
-            $result.nft_info
-        }
-    }
-    
-    end {
-        
-    }
-}
-
 
 function Show-Tree
 {
