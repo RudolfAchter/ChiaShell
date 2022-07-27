@@ -8,54 +8,44 @@ col16fpva26fhdjp2echs3cr7c30gzl7qe67hu9grtsjcqldz354asjsyzp6wx
 https://api.mintgarden.io/collections/col16fpva26fhdjp2echs3cr7c30gzl7qe67hu9grtsjcqldz354asjsyzp6wx/nfts?page=1&size=12
 #>
 
+$Global:ChiaShell
 
 $srcDir="~/Documents/nft_collection"
 $itemsDir="~/git/chiania/docs/items"
 #$outFile="items_test2.md"
 #$replaceFile=($chianiaDir + "/" + $outFile)
 
-$a_collections=@(
-    @{name="Chia_Inventory"; tradeLink="https://dexie.space/offers/col16fpva26fhdjp2echs3cr7c30gzl7qe67hu9grtsjcqldz354asjsyzp6wx/xch"}
-    @{name="Chreatures";     tradeLink="https://dexie.space/offers/col1w0h8kkkh37sfvmhqgd4rac0m0llw4mwl69n53033h94fezjp6jaq4pcd3g/xch"}
-    @{name="Brave_Seedling"; tradeLink="https://dexie.space/offers/col1jgw23rce22aucy0vrseqa3dte8sd0924sdjw5xuxzljcnhgr8fpqnjcu7q/xch"}
-)
+$spaceScan=@{
+    apiKey="tkn1qqqk2az9qpzedr6lucan4qzf57zs9nmfkptjcfsk2az9qpzevqqq5rzt30"
+}
 
+$a_collections=@(
+    @{name="Chia Inventory"; folder_name="Chia_Inventory"; collection_id="col16fpva26fhdjp2echs3cr7c30gzl7qe67hu9grtsjcqldz354asjsyzp6wx"}
+    @{name="Chreatures";     folder_name="Chreatures";     collection_id="col1w0h8kkkh37sfvmhqgd4rac0m0llw4mwl69n53033h94fezjp6jaq4pcd3g"}
+    @{name="Brave Seedling"; folder_name="Brave_Seedling"; collection_id="col1jgw23rce22aucy0vrseqa3dte8sd0924sdjw5xuxzljcnhgr8fpqnjcu7q"}
+    @{name="Sheesh! Snail";  folder_name="Sheesh__Snail";  collection_id="col1syclna803y6h3zl24fwswk0thmm7ad845cfc6sv4sndfzu26q8cq3pprct"}
+)
 
 $totalData=$a_collections | ForEach-Object {
-    $collection=$_
-    Get-ChildItem -Path ($srcDir + "/" + $collection.name) -Filter *.json | ForEach-Object {
-        $file=$_
-        $data=Get-content -Path $file.FullName | ConvertFrom-Json
-        $data | Add-member -MemberType NoteProperty -Name tradeLink -Value $collection.tradeLink
-        $data
-    }
-}
-
-#modifications
-<#
-$mods=@(
-    @{pattern='Bark Shield.*'; mod='After the first fight, the unarmed adventurers saw they needed something to defend themselves. So they rip off some bark from the trees and made them provisionally bark shields.'}
-    @{pattern='Catapult.*'; mod='At the beginning of their quest the unarmed volunteers collected stones and made catapults for themselves to attack the monsters.'}
-)
-#>
-
-
-for($i=0;$i -lt $totalData.count;$i++){
-    foreach($mod in $mods){
-        if($totalData[$i].metadata.name -match $mod.pattern){
-            $totalData[$i].metadata.description+=" " + $mod.mod
+    $coll=$_
+    $collData=Invoke-RestMethod -Uri ("https://api2.spacescan.io/api/nft/collection/" + $coll.collection_id + "?x-auth-id=" + $spaceScan.apiKey + "&coin=xch&page=1&count=40&version=1")
+    
+    if($collData.status -eq "success"){
+        $collData.data | ForEach-Object {
+            $dat=$_
+            $dat
         }
     }
-    #$totalData[$i].metadata.description
 }
 
-$totalData=$totalData | Sort-Object -Property {$_.metadata.name}
+
+$totalData=$totalData | Sort-Object -Property @({$_.meta_info.collection.name},{$_.meta_info.name})
 
 #Alle "Spalten" ermitteln
 $allTraits=$totalData | ForEach-Object {
     $data=$_
     $h_traits=[ordered]@{}
-    $data.metadata.attributes | ForEach-Object {
+    $data.meta_info.attributes | ForEach-Object {
         $h_traits.Add($_.trait_type,$_.value)
     }
     $o_traits=[PSCustomObject]$h_traits
@@ -64,32 +54,38 @@ $allTraits=$totalData | ForEach-Object {
 
 
 $ngpat='(.*?)([#0-9]+)'
+$specialItems=@('Shadow Sword')
 
 #Powershell Objekte erstellen
 $itemObjects=$totalData | ForEach-Object {
     $data=$_
 
     $h_props=[ordered]@{}
-    $h_props.Add("uri",$data.data_uris[0])
+    $h_props.Add("uri",$data.nft_info.data_uris[0])
     $h_props.Add("nft_data",@{
-        "nft_coin_id" = $data.nft_coin_id
-        "TradeLink" = $data.tradeLink
+        "nft_coin_id" = $data.nft_info.nft_coin_id
     })
-    $match=$data.metadata.name | Select-String -Pattern $ngpat
-    if($null -ne $match){
-        $h_props.Add("Item Type",$match.Matches.Groups[1].Value.Trim())
+    $match=$data.meta_info.name | Select-String -Pattern $ngpat
+    if($null -ne $match -or ($data.meta_info.name -in $specialItems)){
 
-        $h_props.Add("Name",$data.metadata.name)
-        $h_props.Add("Collection",$data.metadata.collection.name)
-        $h_props.Add("Description",$data.metadata.description)
+        if($null -ne $match){
+            $h_props.Add("Item Type",$match.Matches.Groups[1].Value.Trim())
+        }
+        else{ #Special Item
+            $h_props.Add("Item Type",$data.meta_info.name)
+        }
+
+        $h_props.Add("Name",$data.meta_info.name)
+        $h_props.Add("Collection",$data.meta_info.collection.name)
+        $h_props.Add("Description",$data.meta_info.description)
 
         foreach($trait in $allTraits){
-            $h_props.Add($trait,($data.metadata.attributes | Where-Object{$_.trait_type -eq $trait}).value)
+            $h_props.Add($trait,($data.meta_info.attributes | Where-Object{$_.trait_type -eq $trait}).value)
         }
         [PSCustomObject]$h_props
     }
     else{
-        Write-Warning("No Regex Match for Item Type: '" + $data.metadata.name + "' nft_id: " + $data.nft_coin_id)
+        Write-Warning("No Regex Match for Item Type: '" + $data.meta_info.name + "' nft_id: " + $data.nft_coin_id)
     }
 }
 
