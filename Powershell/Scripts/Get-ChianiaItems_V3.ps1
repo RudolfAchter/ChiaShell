@@ -1,11 +1,12 @@
 <#
-TODO Mintgarden api benutzen!
-
+ERLEDIGT Mintgarden api benutzen!
 https://api.mintgarden.io/search?query=Chia+Inventory
-
 col16fpva26fhdjp2echs3cr7c30gzl7qe67hu9grtsjcqldz354asjsyzp6wx
-
 https://api.mintgarden.io/collections/col16fpva26fhdjp2echs3cr7c30gzl7qe67hu9grtsjcqldz354asjsyzp6wx/nfts?page=1&size=12
+
+TODO Dexie.space Angebote holen
+Beispiel: 
+curl "https://dexie.space/v1/offers?offered=col1syclna803y6h3zl24fwswk0thmm7ad845cfc6sv4sndfzu26q8cq3pprct&requested=xch&page=1&page_size=50&sort=price_asc"
 #>
 
 $Global:ChiaShell
