@@ -793,9 +793,14 @@ Function Get-ChiaTransaction {
 Function Get-ChiaOffers {
     [CmdletBinding()]
     param(
+        $start=0,
+        $end=50
     )
 
-    $h_params=@{}
+    $h_params=@{
+        start=$start
+        end=$end
+    }
 
     $result = _ChiaApiCall -api wallet -function "get_all_offers"
     $result.trade_records
@@ -1110,11 +1115,13 @@ Function Show-ChiaNftOffers {
     [CmdletBinding()]
     param(
         [ValidateSet("offered","requested")]
-        $offerType="offered"
+        $offerType="offered",
+        $start=0,
+        $end=50
     )
     
 
-    (Get-ChiaOffers) | Where-Object {$_.summary.$offerType.PsObject.Properties.Name.Length -gt 5} | forEach-Object{
+    (Get-ChiaOffers -start $start -end $end) | Where-Object {$_.summary.$offerType.PsObject.Properties.Name.Length -gt 5} | forEach-Object{
         $offer=$_
         #$offer.summary.$offerType.PsObject.Properties.Name
         $nftInfo=Show-ChiaNftInfo -coin_ids ("0x"+$offer.summary.$offerType.PsObject.Properties.Name)
