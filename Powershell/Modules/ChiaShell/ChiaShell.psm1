@@ -1112,6 +1112,28 @@ General notes
 }
 
 Function Show-ChiaNftOffers {
+<#
+.SYNOPSIS
+Short description
+
+.DESCRIPTION
+Long description
+
+.PARAMETER offerType
+Parameter description
+
+.PARAMETER start
+Parameter description
+
+.PARAMETER end
+Parameter description
+
+.EXAMPLE
+Show-ChiaNftOffers | Where-Object {$_.nft_info.name -like "Khopesh*"}
+
+.NOTES
+General notes
+#>
     [CmdletBinding()]
     param(
         [ValidateSet("offered","requested")]
