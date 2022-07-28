@@ -12,6 +12,7 @@ $Global:ChiaShell
 
 $srcDir="~/Documents/nft_collection"
 $itemsDir="~/git/chiania/docs/items"
+$logPath="~/Documents/chiania_items.log"
 #$outFile="items_test2.md"
 #$replaceFile=($chianiaDir + "/" + $outFile)
 
@@ -26,27 +27,55 @@ $a_collections=@(
     @{name="Sheesh! Snail";  folder_name="Sheesh__Snail";  collection_id="col1syclna803y6h3zl24fwswk0thmm7ad845cfc6sv4sndfzu26q8cq3pprct"}
 )
 
+
 $totalData=$a_collections | ForEach-Object {
     $coll=$_
-    $collData=Invoke-RestMethod -Uri ("https://api2.spacescan.io/api/nft/collection/" + $coll.collection_id + "?x-auth-id=" + $spaceScan.apiKey + "&coin=xch&page=1&count=40&version=1")
+    #$collData=Invoke-RestMethod -Uri ("https://api2.spacescan.io/api/nft/collection/" + $coll.collection_id + "?x-auth-id=" + $spaceScan.apiKey + "&coin=xch&page=1&count=40&version=1")
+
+    $i=0
+    $page=1
+    $count=40
+    $version=1
     
-    if($collData.status -eq "success"){
-        $collData.data | ForEach-Object {
-            $dat=$_
-            $dat
+
+    do{
+        $collData=Invoke-RestMethod -Uri ("https://api2.spacescan.io/api/nft/collection/" + $coll.collection_id + "?x-auth-id=" + $spaceScan.apiKey + "&coin=xch&page=$page&count=$count&version=$version")
+        $dat=$null
+        if($collData.status -eq "success"){
+            $collData.data | ForEach-Object {
+                $dat=$_
+                $collCount=$dat.count
+                #Ausgabe
+                Out-File -FilePath $logPath -InputObject ($dat.meta_info.name + ": " + $i + " of " + $collCount) -Append
+                $dat
+                #zählen
+                $i++
+            }
         }
-    }
+        else{
+            $collData
+        }
+        $page++
+    }while($i -lt $collCount)
+    #}while($false)
 }
 
+#Vertrannte Items müssen weg
+#$totalData | Where-Object {$_.meta_info.name -like "Khopesh 01"} | Select-Object {$_.meta_info.name},{$_.owner_hash}
 
-$totalData=$totalData | Sort-Object -Property @({$_.meta_info.collection.name},{$_.meta_info.name})
+$totalData=$totalData | 
+    Sort-Object -Property @({$_.meta_info.collection.name},{$_.meta_info.name}) |
+    #Filter out Burned Objects
+    Where-Object {$_.owner_hash -ne "000000000000000000000000000000000000000000000000000000000000dead"}
+
+
 
 #Alle "Spalten" ermitteln
 $allTraits=$totalData | ForEach-Object {
     $data=$_
     $h_traits=[ordered]@{}
-    $data.meta_info.attributes | ForEach-Object {
-        $h_traits.Add($_.trait_type,$_.value)
+    ForEach($attr in $data.meta_info.attributes){
+        $h_traits.Add($attr.trait_type,$attr.value)
     }
     $o_traits=[PSCustomObject]$h_traits
     $o_traits
@@ -60,10 +89,14 @@ $specialItems=@('Shadow Sword')
 $itemObjects=$totalData | ForEach-Object {
     $data=$_
 
+    if($null -eq $data.nft_info.data_uris){
+        return
+    }
     $h_props=[ordered]@{}
     $h_props.Add("uri",$data.nft_info.data_uris[0])
     $h_props.Add("nft_data",@{
         "nft_coin_id" = $data.nft_info.nft_coin_id
+        "nft_collection_id" = $data.synthetic_id
     })
     $match=$data.meta_info.name | Select-String -Pattern $ngpat
     if($null -ne $match -or ($data.meta_info.name -in $specialItems)){
@@ -168,7 +201,7 @@ tags:
 
 
 "@
-        $out+= "- [Dexie - " + $group.Group[0].Collection + "](" + $group.Group[0].nft_data.tradeLink + ")" + "`r`n`r`n"
+        $out+= "- Buy " + $group.Group[0].Collection + " at the blue duck: " + "[Dexie - " + $group.Group[0].Collection + "](https://dexie.space/offers/" + $group.Group[0].nft_data.nft_collection_id + "/xch)" + "`r`n`r`n"
         $group.Group | ForEach-Object {
             $item=$_
 
