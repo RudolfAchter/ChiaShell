@@ -583,12 +583,17 @@ Function Set-ChiaNftDid {
         [Parameter(ValueFromPipeline=$true)]
         $nfts,
         $new_did=(Select-ChiaWallet -wallet_type NFT),
-        $timeoutSec=120
+        $timeoutSec=120,
+        $fee=50000000 / 1e12
     )
+
+
+    
 
     Begin{
         if($new_did.GetType().Name -ne "String"){
             $new_did=$new_did.did
+            $fee=$fee*1e12
         }
     }
 
@@ -609,6 +614,7 @@ Function Set-ChiaNftDid {
                     wallet_id=$nft.nft_wallet_id
                     nft_coin_id=$nft.nft_coin_id
                     did_id=$new_did
+                    fee=$fee
                 }
                 $result = _ChiaApiCall -api wallet -function "nft_set_nft_did" -params $h_params
                 $timespan=New-TimeSpan -Seconds 0
