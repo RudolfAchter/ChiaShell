@@ -33,12 +33,10 @@ $a_collections=@(
 $totalData=$a_collections | ForEach-Object {
     $coll=$_
     #$collData=Invoke-RestMethod -Uri ("https://api2.spacescan.io/api/nft/collection/" + $coll.collection_id + "?x-auth-id=" + $spaceScan.apiKey + "&coin=xch&page=1&count=40&version=1")
-
     $i=0
     $page=1
     $count=40
     $version=1
-    
 
     do{
         $collData=Invoke-RestMethod -Uri ("https://api2.spacescan.io/api/nft/collection/" + $coll.collection_id + "?x-auth-id=" + $spaceScan.apiKey + "&coin=xch&page=$page&count=$count&version=$version")
