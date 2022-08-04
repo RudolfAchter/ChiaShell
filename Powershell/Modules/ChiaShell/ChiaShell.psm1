@@ -582,7 +582,8 @@ Function Set-ChiaNftDid {
     param(
         [Parameter(ValueFromPipeline=$true)]
         $nfts,
-        $new_did=(Select-ChiaWallet -wallet_type NFT)
+        $new_did=(Select-ChiaWallet -wallet_type NFT),
+        $timeoutSec=120
     )
 
     Begin{
@@ -597,22 +598,37 @@ Function Set-ChiaNftDid {
             if($nft.GetType().Name -eq "String"){
                 $nft=Get-ChiaNfts | Where-Object nft_coin_id -eq $nft
             }
-
-            $h_params=@{
-                wallet_id=$nft.nft_wallet_id
-                nft_coin_id=$nft.nft_coin_id
-                did_id=$new_did
-            }
-
-            $result = _ChiaApiCall -api wallet -function "nft_set_nft_did" -params $h_params
-            $spend_bundle=$result.spend_bundle
-
+            
+            
             $wallet = Get-ChiaWallets -wallet_type NFT | Where-Object{$_.did -eq $new_did}
             $new_did_id=($wallet.data | ConvertFrom-Json).did_id
 
-            while((Get-ChiaNftInfo -coin_ids $nft.nft_coin_id -NoCache).owner_did -ne $new_did_id){
-                Write-Host("Transferring NFT " + $nft.nft_coin_id + " to " + $new_did_id)
-                Start-Sleep -Seconds 10
+            $setDidSuccess=$false
+            while(-not $setDidSuccess){
+                $h_params=@{
+                    wallet_id=$nft.nft_wallet_id
+                    nft_coin_id=$nft.nft_coin_id
+                    did_id=$new_did
+                }
+                $result = _ChiaApiCall -api wallet -function "nft_set_nft_did" -params $h_params
+                $timespan=New-TimeSpan -Seconds 0
+                $startTime=Get-Date
+                $spend_bundle=$result.spend_bundle
+                $spend_bundle
+
+                while($timespan.TotalSeconds -lt $timeoutSec -and $setDidSuccess -eq $false){
+                    Write-Host("Transferring NFT " + $nft.nft_coin_id + " to " + $new_did_id + " " + $timespan)
+                    Start-Sleep -Seconds 30
+                    $setDidSuccess=((Get-ChiaNftInfo -coin_ids $nft.nft_coin_id -NoCache).owner_did -eq $new_did_id)
+                    $endTime=Get-Date
+                    $timespan=$endTime - $startTime
+                }
+                if($setDidSuccess -eq $false){
+                    $h_params=@{
+                        wallet_id=$nft.nft_wallet_id
+                    }
+                    _ChiaApiCall -api wallet -function "delete_unconfirmed_transactions" -params $h_params
+                }
             }
         }
     }
@@ -1185,7 +1201,12 @@ General notes
             else{
                 for($i=0;$i -lt $nft.metadata_uris.Count -and $null -eq $metadata;$i++){
                     Write-Verbose ("Trying Metadata Uri: " + $nft.metadata_uris[$i])
-                    $metadata=Invoke-RestMethod -Uri $nft.metadata_uris[$i] -TimeoutSec $TimeoutSec
+                    Try{
+                        $metadata=Invoke-RestMethod -Uri $nft.metadata_uris[$i] -TimeoutSec $TimeoutSec
+                    }
+                    Catch{
+                        Write-Warning("Could not fetch matadata for nft_coin_id " + $nft.nft_coin_id + "from " + $nft.metadata_uris[$i])
+                    }
                 }
                 if($null -ne $metadata){
                     $metadata | Add-Member -MemberType "NoteProperty" -Name "nft_coin_id" -Value ($nft.nft_coin_id)
