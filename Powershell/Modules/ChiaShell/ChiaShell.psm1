@@ -582,12 +582,18 @@ Function Set-ChiaNftDid {
     param(
         [Parameter(ValueFromPipeline=$true)]
         $nfts,
-        $new_did=(Select-ChiaWallet -wallet_type NFT)
+        $new_did=(Select-ChiaWallet -wallet_type NFT),
+        $timeoutSec=120,
+        $fee=50000000 / 1e12
     )
+
+
+    
 
     Begin{
         if($new_did.GetType().Name -ne "String"){
             $new_did=$new_did.did
+            $fee=$fee*1e12
         }
     }
 
@@ -597,22 +603,38 @@ Function Set-ChiaNftDid {
             if($nft.GetType().Name -eq "String"){
                 $nft=Get-ChiaNfts | Where-Object nft_coin_id -eq $nft
             }
-
-            $h_params=@{
-                wallet_id=$nft.nft_wallet_id
-                nft_coin_id=$nft.nft_coin_id
-                did_id=$new_did
-            }
-
-            $result = _ChiaApiCall -api wallet -function "nft_set_nft_did" -params $h_params
-            $spend_bundle=$result.spend_bundle
-
+            
+            
             $wallet = Get-ChiaWallets -wallet_type NFT | Where-Object{$_.did -eq $new_did}
             $new_did_id=($wallet.data | ConvertFrom-Json).did_id
 
-            while((Get-ChiaNftInfo -coin_ids $nft.nft_coin_id -NoCache).owner_did -ne $new_did_id){
-                Write-Host("Transferring NFT " + $nft.nft_coin_id + " to " + $new_did_id)
-                Start-Sleep -Seconds 10
+            $setDidSuccess=$false
+            while(-not $setDidSuccess){
+                $h_params=@{
+                    wallet_id=$nft.nft_wallet_id
+                    nft_coin_id=$nft.nft_coin_id
+                    did_id=$new_did
+                    fee=$fee
+                }
+                $result = _ChiaApiCall -api wallet -function "nft_set_nft_did" -params $h_params
+                $timespan=New-TimeSpan -Seconds 0
+                $startTime=Get-Date
+                $spend_bundle=$result.spend_bundle
+                $spend_bundle
+
+                while($timespan.TotalSeconds -lt $timeoutSec -and $setDidSuccess -eq $false){
+                    Write-Host("Transferring NFT " + $nft.nft_coin_id + " to " + $new_did_id + " " + $timespan)
+                    Start-Sleep -Seconds 30
+                    $setDidSuccess=((Get-ChiaNftInfo -coin_ids $nft.nft_coin_id -NoCache).owner_did -eq $new_did_id)
+                    $endTime=Get-Date
+                    $timespan=$endTime - $startTime
+                }
+                if($setDidSuccess -eq $false){
+                    $h_params=@{
+                        wallet_id=$nft.nft_wallet_id
+                    }
+                    _ChiaApiCall -api wallet -function "delete_unconfirmed_transactions" -params $h_params
+                }
             }
         }
     }
@@ -683,7 +705,7 @@ Function Show-ChiaNfts {
             label='CollectionName'
             expression={($_.collection.name)}
           },
-          "description","nft_coin_id","nft_wallet_id")
+          "description","launcher_id","nft_coin_id","nft_wallet_id")
     )
     $result = Get-ChiaNfts -wallet_id $wallet_id
     
@@ -694,6 +716,7 @@ Function Show-ChiaNfts {
                 $nft=$_
                 $metadata=Get-ChiaNftMetadata -nfts $nft
                 $metadata | Add-Member -MemberType "NoteProperty" -Name "nft_wallet_id" -Value $nft.nft_wallet_id
+                $metadata | Add-Member -MemberType "NoteProperty" -Name "launcher_id" -Value $nft.launcher_id
                 $metadata | Select-Object $Columns
             }
         }
@@ -714,6 +737,7 @@ Function Show-ChiaNfts {
                 $nft=$_
                 $metadata=Get-ChiaNftMetadata -nfts $nft
                 $metadata | Add-Member -MemberType "NoteProperty" -Name "nft_wallet_id" -Value $nft.nft_wallet_id
+                $metadata | Add-Member -MemberType "NoteProperty" -Name "launcher_id" -Value $nft.launcher_id
                 $metadata
             } | Select-Object $Columns | Out-ConsoleGridView
             break
@@ -740,7 +764,7 @@ Function Select-ChiaNfts {
     [CmdletBinding()]
     param(
         $wallet_id=(Get-ChiaWallets | Where-Object{$_.type -eq 10}).id,
-        $Columns=@("name","collection","description","nft_coin_id","nft_wallet_id")
+        $Columns=@("name","collection","description","launcher_id","nft_coin_id","nft_wallet_id")
     )
     Show-ChiaNfts -wallet_id $wallet_id -View "Grid" -Columns $Columns
 }
@@ -806,7 +830,95 @@ Function Get-ChiaOffers {
     $result.trade_records
 }
 
-Function Remove-Offer {
+Function New-ChiaOffer {
+    param(
+        [Parameter(Mandatory=$true)]
+        $offerAsset,
+        $offerCount=1,
+        [Parameter(Mandatory=$true)]
+        $requestAsset,
+        $requestCount=1,
+        $fee=50000000 / 1e12
+    )
+
+    <#
+    offer or request Asset can be:
+    - a Chia Wallet (type 0)
+    - a CAT Wallet (type 6)
+    - a NFT (need launcher_id aka launcher coin id of NFT)
+    #>
+
+    $fee=$fee*1e12
+
+    if($offerAsset.GetType().Name -eq "String"){
+        if($offerAsset -like "0x*"){
+            #Should be a launcher_id
+            $offerAsset=$offerAsset -replace '^0x',''
+        }
+        else{
+            #would be Name of a Wallet -> need id
+            $offerAsset=(Get-ChiaWallets | Where-Object{$_.name -eq $offerAsset}).id
+        }
+        
+    }
+    elseif($offerAsset.type -eq 0){
+        #Chia (0) Offer
+        $offercount*=1e12
+        $offerAsset=$offerAsset.id
+    }
+    elseif($offerAsset.type -eq 6){
+        #CAT (6) offer
+        $offercount*=1e3
+        $offerAsset=$offerAsset.id
+    }
+    elseif($offerAsset.launcher_id -like "0x*"){
+        #Its a NFT, get its launcher_id
+        $offerAsset=$offerAsset.launcher_id -replace '^0x',''
+    }
+
+
+    if($requestAsset.GetType().Name -eq "String"){
+        if($requestAsset -like "0x*"){
+            #Should be a launcher_id
+            $requestAsset=$requestAsset -replace '^0x',''
+        }
+        else{
+            #Would be Wallet Name -> need id
+            $requestAsset=(Get-ChiaWallets | Where-Object{$_.name -eq $requestAsset}).id
+        }
+        
+    }
+    elseif($requestAsset.type -eq 0){
+        #Chia (0) Offer
+        $requestCount*=1e12
+        $requestAsset=$requestAsset.id
+    }
+    elseif($requestAsset.type -eq 6){
+        #CAT (6) offer
+        $requestCount*=1e3
+        $requestAsset=$requestAsset.id
+    }
+    elseif($requestAsset.launcher_id -like "0x*"){
+        #Its a NFT, get its launcher_id
+        $requestAsset=$requestAsset.launcher_id -replace '^0x',''
+    }
+
+    $h_params=@{
+        "offer"=@{
+            "$requestAsset" = ($requestCount)
+            "$offerAsset" = ($offerCount * -1)
+        }
+        "fee"=$fee
+    }
+
+    #$h_params
+
+    $result = _ChiaApiCall -api wallet -function "create_offer_for_ids" -params $h_params
+    $result.offer
+}
+
+
+Function Remove-ChiaOffer {
 <#
 .SYNOPSIS
 Short description
@@ -1095,7 +1207,12 @@ General notes
             else{
                 for($i=0;$i -lt $nft.metadata_uris.Count -and $null -eq $metadata;$i++){
                     Write-Verbose ("Trying Metadata Uri: " + $nft.metadata_uris[$i])
-                    $metadata=Invoke-RestMethod -Uri $nft.metadata_uris[$i] -TimeoutSec $TimeoutSec
+                    Try{
+                        $metadata=Invoke-RestMethod -Uri $nft.metadata_uris[$i] -TimeoutSec $TimeoutSec
+                    }
+                    Catch{
+                        Write-Warning("Could not fetch matadata for nft_coin_id " + $nft.nft_coin_id + "from " + $nft.metadata_uris[$i])
+                    }
                 }
                 if($null -ne $metadata){
                     $metadata | Add-Member -MemberType "NoteProperty" -Name "nft_coin_id" -Value ($nft.nft_coin_id)
