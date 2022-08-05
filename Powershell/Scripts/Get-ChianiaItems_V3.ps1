@@ -14,6 +14,10 @@ $Global:ChiaShell
 $srcDir="~/Documents/nft_collection"
 $itemsDir="~/git/chiania/docs/items"
 $logPath="~/Documents/chiania_items.log"
+
+$itemLevelEqPath="~/git/Chia-Inventory/level_eq.csv"
+$itemLevelEq=Import-Csv -Path $itemLevelEqPath
+
 #$outFile="items_test2.md"
 #$replaceFile=($chianiaDir + "/" + $outFile)
 
