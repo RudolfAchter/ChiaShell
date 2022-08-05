@@ -94,6 +94,9 @@ $h_typePatterns=@{
         patterns = @('Catapult','Halberd','Khopesh','Knife','Sword','.* Axe','Axe',
                      '.* Bow','Bow','Stone','.* Club','Club','Enhanced Tree Root')
     }
+    'Ring' = @{
+        patterns = @('.* Ring','Ring')
+    }
     'Mount'  = @{
         patterns = @('Deer')
     }
