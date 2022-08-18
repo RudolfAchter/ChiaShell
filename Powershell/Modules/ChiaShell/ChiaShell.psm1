@@ -130,6 +130,11 @@ $Global:ChiaShell=@{
     Run=@{
         SelectedWallet=$null
     }
+    AddressType=@{
+        XCH="xch"
+        NFT="nft"
+        DID="did:chia:"
+    }
 }
 '@
 )
