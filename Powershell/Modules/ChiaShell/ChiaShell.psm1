@@ -313,7 +313,7 @@ General notes
         $params,
         [ValidateSet("error","info","verboseonly")]
         $errorType="error",
-        $timeoutSec=30
+        $timeoutSec=60
     )
 
     #-Body ($params | ConvertTo-Json)
