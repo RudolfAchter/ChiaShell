@@ -33,7 +33,9 @@ else{
     $a_psModulePath=$env:PSModulePath -split ";"
 }
 
-$global:ModConf=@{}
+if($null -eq $global:ModConf){
+    $global:ModConf=@{}
+}
 $global:ModConf.${global:thisModuleName} = @{}
 
 $a_psModulePath | ForEach-Object {
