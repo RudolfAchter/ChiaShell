@@ -1095,6 +1095,9 @@ General notes
             elseif($null -ne $coin_id.nft_info.nft_coin_id){
                 $coin_id=$coin_id.nft_info.nft_coin_id
             }
+            elseif($null -ne $coin_id.coin.parent_coin_info){
+                $coin_id=$coin_id.coin.parent_coin_info
+            }
 
             $h_params=@{
                 coin_id=$coin_id
@@ -1514,16 +1517,32 @@ Function Get-ChiaBlockchainState {
 
 
 Function Get-ChiaBlocks {
+    [CmdletBinding()]
     param(
         $start=((Get-ChiaBlockchainState).peak.height - 20),
         $end=((Get-ChiaBlockchainState).peak.height)
     )
-    $h_params=@{
-        start=$start
-        end=$end
+
+    $page_start=$start
+    $page_end=0
+    $page_size=20
+
+    while($page_end -lt $end){
+        $page_end=$end
+        if($page_end - $page_start -gt $page_size){
+            $page_end=$page_start + $page_size
+        }
+
+        $h_params=@{
+            start=$page_start
+            end=$page_end
+        }
+        Write-Verbose("Getting Blocks from $page_start to $page_end")
+        $result=_ChiaApiCall -api FullNode -function "get_blocks" -params $h_params
+        $result.blocks
+
+        $page_start+=$page_size
     }
-    $result=_ChiaApiCall -api FullNode -function "get_blocks" -params $h_params
-    $result.blocks
 }
 
 Function Get-ChiaBlock {
