@@ -33,7 +33,9 @@ else{
     $a_psModulePath=$env:PSModulePath -split ";"
 }
 
-$global:ModConf=@{}
+if($null -eq $global:ModConf){
+    $global:ModConf=@{}
+}
 $global:ModConf.${global:thisModuleName} = @{}
 
 $a_psModulePath | ForEach-Object {
@@ -1219,7 +1221,7 @@ General notes
                         $metadata=Invoke-RestMethod -Uri $nft.metadata_uris[$i] -TimeoutSec $TimeoutSec
                     }
                     Catch{
-                        Write-Warning("Could not fetch matadata for nft_coin_id " + $nft.nft_coin_id + "from " + $nft.metadata_uris[$i])
+                        Write-Warning("Could not fetch metadata for nft_coin_id " + $nft.nft_coin_id + "from " + $nft.metadata_uris[$i])
                     }
                 }
                 if($null -ne $metadata){
@@ -1621,6 +1623,30 @@ Function Get-ChiaCoinRecordsByPuzzleHash {
         end_height=$end_height
     }
     $result=_ChiaApiCall -api FullNode -function "get_coin_records_by_puzzle_hash" -params $h_params
+    $result.coin_records
+}
+
+Function Get-ChiaCoinRecordsByParentIds {
+    param(
+        [Parameter(Mandatory=$true)]
+        $parent_ids,
+        [bool]$include_spent_coins=$true,
+        #TODO get height from current height
+        $start_height=((Get-ChiaBlockchainState).peak.height - 20),
+        $end_height=((Get-ChiaBlockchainState).peak.height)
+    )
+
+    if($parent_ids.GetType().Name -eq "String"){
+        $parent_ids=@($parent_ids)
+    }
+
+    $h_params=@{
+        parent_ids=$parent_ids
+        include_spent_coins=$include_spent_coins
+        start_height=$start_height
+        end_height=$end_height
+    }
+    $result=_ChiaApiCall -api FullNode -function "get_coin_records_by_parent_ids" -params $h_params
     $result.coin_records
 }
 

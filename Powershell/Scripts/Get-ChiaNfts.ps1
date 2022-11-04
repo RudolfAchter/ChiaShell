@@ -3,7 +3,7 @@
 Import-Module ChiaShell -Force
 
 $start=(Get-ChiaBlockHeight -Date "2022-07-15").BlockHeight
-$start=2282305
+#$start=2282305
 
 while($end -lt ((Get-ChiaBlockchainState).peak.height)){
 
