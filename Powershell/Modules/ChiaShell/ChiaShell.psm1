@@ -1916,8 +1916,31 @@ function Convert-NftHtml {
             $out
         }
     }
-    
     End {}
+}
+
+function New-ChiaNftCollection {
+    param(
+        $folder=".",
+        $name,
+        $description,
+        $icon=(Get-Item -Path "icon.*").FullName,
+        $banner=(Get-Item -Path "banner.*").FullName,
+        $twitter,
+        $website
+    )
+
+    $iconHash=ipfs add -Q $icon
+
+    $h_collectionProps = @{
+        id=(New-Guid.Guid)
+        description=$description
+        icon=$icon
+        banner=$banner
+        twitter=$twitter
+        website=$website
+    }
+
 }
 
 
