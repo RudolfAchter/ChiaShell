@@ -1919,28 +1919,124 @@ function Convert-NftHtml {
     End {}
 }
 
+
+function Add-IpfsFile {
+    [CmdletBinding()]
+    param(
+        [Parameter(ValueFromPipeline=$true)]
+        $files
+    )
+
+    Begin{}
+
+    Process{
+        $files | ForEach-Object {
+            $file=$_
+
+            if($file.GetType().Name -eq "String"){
+                $file=Get-Item -Path $file
+            }
+
+            $fileHashPath=($file.Directory.FullName + "/" + $file.BaseName + ".ipfs.txt")
+            if(-not (Test-Path $fileHashPath)){
+                $fileHash=ipfs add -Q $file.FullName
+                Set-Content -Path ($fileHashPath) -Value $fileHash
+            }
+            else{
+                $fileHash=Get-Content -Path $fileHashPath
+            }
+            $file | Add-Member -MemberType NoteProperty -Name IpfsHash -Value $fileHash
+            $file
+        }
+    }
+
+    End{}
+}
+
 function New-ChiaNftCollection {
+<#
+.SYNOPSIS
+Prepares a new Chia NFT Collection
+
+.DESCRIPTION
+This prepares a new Chia NFT Collection. Basically
+a collection.json File is written to the collection
+folder defining the properties the collection should have
+
+.PARAMETER folder
+Folder where the collection files are in
+
+.PARAMETER name
+Name of the collection
+
+.PARAMETER description
+longer description of the collection
+
+.PARAMETER icon
+File that will be used as icon (will be added to IPFS)
+
+.PARAMETER banner
+File that will be used as banner (will be added to IPFS)
+
+.PARAMETER twitter
+Twitter Name of artist (starting with @)
+
+.PARAMETER website
+Website for the collection
+
+.EXAMPLE
+New-ChiaNftCollection -folder . -name Chreatures -description "A collection of creatures" -twitter "@Chreatures1" -website "https://twitter.com/Chreatures1" -icon ./icon.jpeg -banner ./banner.png
+#>
     param(
         $folder=".",
         $name,
         $description,
-        $icon=(Get-Item -Path "icon.*").FullName,
-        $banner=(Get-Item -Path "banner.*").FullName,
+        $icon=(Get-Item -Path "icon.???").FullName,
+        $banner=(Get-Item -Path "banner.???").FullName,
         $twitter,
         $website
     )
 
-    $iconHash=ipfs add -Q $icon
 
-    $h_collectionProps = @{
-        id=(New-Guid.Guid)
-        description=$description
-        icon=$icon
-        banner=$banner
-        twitter=$twitter
-        website=$website
+    $attributes=@{}
+
+    if($null -ne $icon){
+        $iconIpfs=Add-IPfsFile -files $icon
+        $iconUrl=$global:ChiaShell.Ipfs.UrlPrefix + "/" + $iconIpfs.IPfsHash
+        $attributes.icon=$iconUrl
+    }
+    
+    if($null -ne $banner){
+        $bannerIpfs=Add-IpfsFile -files $banner
+        $bannerUrl=$global:ChiaShell.Ipfs.UrlPrefix + "/" + $bannerIpfs.IPfsHash
+        $attributes.banner=$bannerUrl
     }
 
+
+    forEach($attribute in @("description","twitter","website")){
+        if($null -ne $PSBoundParameters.$attribute){
+            $attributes.Add($attribute,$PSBoundParameters.$attribute)
+        }
+    }
+
+    $a_attrs=@()
+
+    forEach($attr in $attributes.GetEnumerator()){
+        $a_attrs+=@{
+            type = $attr.Name
+            value= $attr.Value
+        }
+    }
+
+    $h_collectionProps = @{
+        name=$name
+        id=(New-Guid).Guid
+        attributes=$a_attrs
+    }
+    $colDefPath=($folder + "/collection.json")
+    $h_collectionProps | ConvertTo-Json | Set-Content -Encoding UTF8 -Path $colDefPath
+    # return generated Json File
+    Get-Item -Path $colDefPath
 }
 
 
