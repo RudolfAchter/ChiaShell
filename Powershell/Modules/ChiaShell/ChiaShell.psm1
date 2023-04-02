@@ -783,6 +783,26 @@ Function Select-ChiaNfts {
     Show-ChiaNfts -wallet_id $wallet_id -View "Grid" -Columns $Columns
 }
 
+
+function Get-ChiaCoinRecordsByNames {
+    [CmdletBinding()]
+    param (
+        $names
+    )
+    
+    if($names.GetType().BaseType.Name -ne "Array"){
+        $names=@($names)
+    }
+
+    $h_params = @{
+        names = $names
+        include_spent_coins = $true
+    }
+
+    $result = _ChiaApiCall -api wallet -function "get_coin_records_by_names" -params $h_params
+    $result.coin_records
+}
+
 Function Get-ChiaTransactions {
     [CmdletBinding()]
     param(
@@ -887,9 +907,32 @@ Function Show-ChiaTransactions {
 
     Get-ChiaTransactions @PSBoundParameters | Sort-Object created_at_datetime -Descending:$desc | ForEach-Object {
         $item = $_
-        $AdditionSum = ($item.additions | Measure-Object -Property amount -Sum).Sum
-        $RemovalSum = ($item.removals | Measure-Object -Property amount -Sum).Sum
-        $Amount = $AdditionSum - $RemovalSum
+        #$AdditionSum = ($item.additions | Measure-Object -Property amount -Sum).Sum
+        #$RemovalSum = ($item.removals | Measure-Object -Property amount -Sum).Sum
+        $Amount=$item.Amount
+        $TxType=$typeDesc.([string]$item.type)
+        
+        
+        if($TxType -in "TxIn"){
+            $Amount=0
+            foreach($addition in $item.additions){
+                $coinRecord=Get-ChiaCoinRecordsByNames -names $addition.parent_coin_info
+                if($null -eq $coinRecord){
+                    $Amount+=$addition.amount
+                    #$Amount=$item.Amount
+                }
+            }
+        }
+
+        if($TxType -eq "TxOut"){
+            $Amount=$item.removals.amount | Measure-Object amount -Sum
+        }
+
+        if($TxType -in "TxOut","TradeOut"){
+            $Amount=$Amount * -1
+        }
+        
+        #$Amount = $item.amount
         if($Wallet.Type -eq 6){ # CAT Token
             $AssetId = $Wallet.data -replace '00$',''
         }
@@ -912,11 +955,11 @@ Function Show-ChiaTransactions {
 
         # CustomObject mit Informationen die mich interessieren
         [PSCustomObject]@{
-            Type            = $typeDesc.([string]$item.type)
-            Amount          = "{0:f$pow}" -f ($Amount / [Math]::Pow(10, $pow))
+            Type            = $TxType
+            Amount          = [double]($Amount / [Math]::Pow(10, $pow))
             AmountRaw       = $Amount
             AssetId         = $AssetId
-            FeeAmount       = "{0:f$pow}" -f - ($item.fee_amount / [Math]::Pow(10, $pow))
+            FeeAmount       = [double]($item.fee_amount / [Math]::Pow(10, $pow))
             Wallet          = $WalletName
             Symbol          = $WalletSymbol
             DateCreated     = (ConvertFrom-UnixTimestamp -timestamp $item.created_at_time)
