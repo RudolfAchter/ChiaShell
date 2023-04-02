@@ -286,6 +286,14 @@ Function Get-ChiaCert {
 }
 
 
+Function ConvertFrom-UnixTimestamp {
+    [cmdletBinding()]
+    param(
+        $timestamp
+    )
+    ([timezone]::CurrentTimeZone.ToLocalTime(([datetime]'1/1/1970').AddSeconds($timestamp)))
+}
+
 
 
 Function _ChiaApiCall {
@@ -806,6 +814,67 @@ Function Get-ChiaTransactions {
         Add-Member -InputObject $t -MemberType NoteProperty -Name "created_at_datetime" -Value ([timezone]::CurrentTimeZone.ToLocalTime(([datetime]'1/1/1970').AddSeconds($t.created_at_time)))
         $t
     }
+}
+
+Function Show-ChiaTransactions {
+    [CmdletBinding()]
+    param(
+        [int]$wallet_id=$ChiaShell.Run.SelectedWallet.id,
+        [int]$start=0,
+        [int]$end=50,
+        #https://github.com/Chia-Network/chia-blockchain/search?q=sort_key
+        #$sort_key=$null,
+        [switch]$reverse=$false
+    )
+
+    $Wallet=Get-ChiaWallets | Where-Object{$_.id -eq $wallet_id}
+    if($Wallet.type -eq 0){
+        $pow=12
+        $WalletName = "XCH"
+    }
+    elseif($Wallet.type -eq 6){
+        $pow=3
+        $WalletName = $Wallet.Name
+    }
+    else{
+        Write-Error("Only XCH and CAT Wallets are Supported for this CmdLet")
+        return
+    }
+
+    $typeDesc = @{
+        "0" = "TxIn"
+        "1" = "TxOut"
+        "2" = "CoinbaseReward"
+        "3" = "FeeReward"
+        "4" = "TradeIn"
+        "5" = "TradeOut"
+    }
+
+    $desc=$false
+    if($reverse){
+        $desc=$true
+    }
+
+    Get-ChiaTransactions @PSBoundParameters | Sort-Object created_at_datetime -Descending:$desc | ForEach-Object {
+        $item=$_
+        $AdditionSum=($item.additions | Measure-Object -Property amount -Sum).Sum
+        $RemovalSum=($item.removals | Measure-Object -Property amount -Sum).Sum
+        $Amount=$AdditionSum - $RemovalSum
+
+        # CustomObject mit Informationen die mich interessieren
+        [PSCustomObject]@{
+            Type = $typeDesc.([string]$item.type)
+            Amount = "{0:f$pow}" -f ($Amount / [Math]::Pow(10, $pow))
+            FeeAmount = "{0:f$pow}" -f -($item.fee_amount / [Math]::Pow(10, $pow))
+            Wallet = $WalletName
+            DateCreated = (ConvertFrom-UnixTimestamp -timestamp $item.created_at_time)
+            HeightConfirmed = $item.confirmed_at_height
+            Id = $item.name
+            TradeId = $item.trade_id
+            ToAddress = $item.to_address
+        }
+    }
+
 }
 
 Function Get-ChiaTransaction {
