@@ -1097,6 +1097,9 @@ General notes
             elseif($null -ne $coin_id.nft_info.nft_coin_id){
                 $coin_id=$coin_id.nft_info.nft_coin_id
             }
+            elseif($null -ne $coin_id.coin.parent_coin_info){
+                $coin_id=$coin_id.coin.parent_coin_info
+            }
 
             $h_params=@{
                 coin_id=$coin_id
@@ -1516,16 +1519,32 @@ Function Get-ChiaBlockchainState {
 
 
 Function Get-ChiaBlocks {
+    [CmdletBinding()]
     param(
         $start=((Get-ChiaBlockchainState).peak.height - 20),
         $end=((Get-ChiaBlockchainState).peak.height)
     )
-    $h_params=@{
-        start=$start
-        end=$end
+
+    $page_start=$start
+    $page_end=0
+    $page_size=20
+
+    while($page_end -lt $end){
+        $page_end=$end
+        if($page_end - $page_start -gt $page_size){
+            $page_end=$page_start + $page_size
+        }
+
+        $h_params=@{
+            start=$page_start
+            end=$page_end
+        }
+        Write-Verbose("Getting Blocks from $page_start to $page_end")
+        $result=_ChiaApiCall -api FullNode -function "get_blocks" -params $h_params
+        $result.blocks
+
+        $page_start+=$page_size
     }
-    $result=_ChiaApiCall -api FullNode -function "get_blocks" -params $h_params
-    $result.blocks
 }
 
 Function Get-ChiaBlock {
@@ -1897,8 +1916,127 @@ function Convert-NftHtml {
             $out
         }
     }
-    
     End {}
+}
+
+
+function Add-IpfsFile {
+    [CmdletBinding()]
+    param(
+        [Parameter(ValueFromPipeline=$true)]
+        $files
+    )
+
+    Begin{}
+
+    Process{
+        $files | ForEach-Object {
+            $file=$_
+
+            if($file.GetType().Name -eq "String"){
+                $file=Get-Item -Path $file
+            }
+
+            $fileHashPath=($file.Directory.FullName + "/" + $file.BaseName + ".ipfs.txt")
+            if(-not (Test-Path $fileHashPath)){
+                $fileHash=ipfs add -Q $file.FullName
+                Set-Content -Path ($fileHashPath) -Value $fileHash
+            }
+            else{
+                $fileHash=Get-Content -Path $fileHashPath
+            }
+            $file | Add-Member -MemberType NoteProperty -Name IpfsHash -Value $fileHash
+            $file
+        }
+    }
+
+    End{}
+}
+
+function New-ChiaNftCollection {
+<#
+.SYNOPSIS
+Prepares a new Chia NFT Collection
+
+.DESCRIPTION
+This prepares a new Chia NFT Collection. Basically
+a collection.json File is written to the collection
+folder defining the properties the collection should have
+
+.PARAMETER folder
+Folder where the collection files are in
+
+.PARAMETER name
+Name of the collection
+
+.PARAMETER description
+longer description of the collection
+
+.PARAMETER icon
+File that will be used as icon (will be added to IPFS)
+
+.PARAMETER banner
+File that will be used as banner (will be added to IPFS)
+
+.PARAMETER twitter
+Twitter Name of artist (starting with @)
+
+.PARAMETER website
+Website for the collection
+
+.EXAMPLE
+New-ChiaNftCollection -folder . -name Chreatures -description "A collection of creatures" -twitter "@Chreatures1" -website "https://twitter.com/Chreatures1" -icon ./icon.jpeg -banner ./banner.png
+#>
+    param(
+        $folder=".",
+        $name,
+        $description,
+        $icon=(Get-Item -Path "icon.???").FullName,
+        $banner=(Get-Item -Path "banner.???").FullName,
+        $twitter,
+        $website
+    )
+
+
+    $attributes=@{}
+
+    if($null -ne $icon){
+        $iconIpfs=Add-IPfsFile -files $icon
+        $iconUrl=$global:ChiaShell.Ipfs.UrlPrefix + "/" + $iconIpfs.IPfsHash
+        $attributes.icon=$iconUrl
+    }
+    
+    if($null -ne $banner){
+        $bannerIpfs=Add-IpfsFile -files $banner
+        $bannerUrl=$global:ChiaShell.Ipfs.UrlPrefix + "/" + $bannerIpfs.IPfsHash
+        $attributes.banner=$bannerUrl
+    }
+
+
+    forEach($attribute in @("description","twitter","website")){
+        if($null -ne $PSBoundParameters.$attribute){
+            $attributes.Add($attribute,$PSBoundParameters.$attribute)
+        }
+    }
+
+    $a_attrs=@()
+
+    forEach($attr in $attributes.GetEnumerator()){
+        $a_attrs+=@{
+            type = $attr.Name
+            value= $attr.Value
+        }
+    }
+
+    $h_collectionProps = @{
+        name=$name
+        id=(New-Guid).Guid
+        attributes=$a_attrs
+    }
+    $colDefPath=($folder + "/collection.json")
+    $h_collectionProps | ConvertTo-Json | Set-Content -Encoding UTF8 -Path $colDefPath
+    # return generated Json File
+    Get-Item -Path $colDefPath
 }
 
 
