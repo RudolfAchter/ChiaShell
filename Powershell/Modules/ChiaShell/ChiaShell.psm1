@@ -40,7 +40,7 @@ $global:ModConf.${global:thisModuleName} = @{}
 
 $a_psModulePath | ForEach-Object {
     $psModPath = $_
-    $modPath = ($psModPath + "\" + $global:thisModuleName)
+    $modPath = ($psModPath + "/" + $global:thisModuleName)
     if (Test-Path ($modPath)) {
         $global:ModConf.${global:thisModuleName}.ModPath = $modPath
     }
@@ -159,6 +159,12 @@ $global:ModConf.ChiaShell.values.wallet_types = @{
     "DID"  = 8
 }
 
+
+# chia-dotnet from dkackman has Bech32M for Converting PuzzleHash to XCH Address and vice versa
+# https://github.com/dkackman/chia-dotnet
+if(-not ([System.Management.Automation.PSTypeName]'chia.dotnet.bech32.Bech32M').Type){
+    Add-Type -Path ($global:ModConf.ChiaShell.ModPath + "/dotnet/bin/Release/net7.0/chia-dotnet.dll")
+}
 
 
 $Global:ChiaShellArgumentCompleters = @{
@@ -292,6 +298,47 @@ Function ConvertFrom-UnixTimestamp {
     ([timezone]::CurrentTimeZone.ToLocalTime(([datetime]'1/1/1970').AddSeconds($timestamp)))
 }
 
+
+function Convert-PuzzleHashToAddress {
+    [CmdletBinding()]
+    param (
+        [Parameter(ValueFromPipeline=$true)]
+        [string[]]$puzzleHash,
+        $prefix="xch"
+    )
+    
+    begin {}
+
+    process {
+        $puzzleHash | ForEach-Object {
+            $ph=$_
+            $bech32m=[chia.dotnet.bech32.Bech32M]::new($prefix)
+            $bech32m.PuzzleHashToAddress($ph)        
+        }
+    }
+
+    end {}
+}
+
+function Convert-AddressToPuzzleHash {
+    [CmdletBinding()]
+    param(
+        [Parameter(ValueFromPipeline=$true)]
+        $address
+    )
+
+    begin{}
+
+    process{
+        $address | ForEach-Object {
+            $addr=$_
+            [chia.dotnet.bech32.Bech32M]::AddressToPuzzleHashString($addr)
+        }
+    }
+
+    end{}
+
+}
 
 
 Function _ChiaApiCall {
@@ -532,6 +579,12 @@ Function Use-ChiaKey {
     $result = _ChiaApiCall -api wallet -function "log_in" -params @{
         fingerprint = $fingerprint
     }
+    $result.fingerprint
+}
+
+Function Get-ChiaKeyLoggedIn {
+    [CmdletBinding()]
+    $result = _ChiaApiCall -api wallet -function "get_logged_in_fingerprint"
     $result.fingerprint
 }
 
@@ -806,7 +859,8 @@ function Get-ChiaCoinRecordsByNames {
 Function Get-ChiaTransactions {
     [CmdletBinding()]
     param(
-        [int]$wallet_id = $ChiaShell.Run.SelectedWallet.id,
+        [Parameter(ValueFromPipeline=$true)]
+        $Wallet = $ChiaShell.Run.SelectedWallet.id,
         [int]$start = 0,
         [int]$end = 0,
         #https://github.com/Chia-Network/chia-blockchain/search?q=sort_key
@@ -814,31 +868,45 @@ Function Get-ChiaTransactions {
         [switch]$reverse = $false
     )
 
-    if ($end -eq 0) {
-        $end = (Get-ChiaTransactionCount -wallet_id $wallet_id).count
-    }
+    Begin{}
+
+    Process{
+
+        $Wallet | ForEach-Object {
+            $wallet_id = $_
+            if($wallet_id.GetType().BaseType.Name -eq "Object"){
+                $wallet_id=$wallet_id.id
+            }
+
+            if ($end -eq 0) {
+                $end = (Get-ChiaTransactionCount -wallet_id $wallet_id).count
+            }
 
 
-    $h_params = @{
-        wallet_id = $wallet_id
-        start     = $start
-        end       = $end
-    }
+            $h_params = @{
+                wallet_id = $wallet_id
+                start     = $start
+                end       = $end
+            }
 
-    <#
-    if($null -ne $sort_key){
-        $h_params.Add("sort_key",$sort_key)
-    }
-    #>
-    $h_params.Add("reverse", $reverse)
+            <#
+            if($null -ne $sort_key){
+                $h_params.Add("sort_key",$sort_key)
+            }
+            #>
+            $h_params.Add("reverse", $reverse)
 
-    $result = _ChiaApiCall -api wallet -function "get_transactions" -params $h_params
-    $result.transactions | ForEach-Object {
-        $t = $_
-        Add-Member -InputObject $t -MemberType NoteProperty -Name "created_at_datetime" -Value ([timezone]::CurrentTimeZone.ToLocalTime(([datetime]'1/1/1970').AddSeconds($t.created_at_time)))
-        $t
+            $result = _ChiaApiCall -api wallet -function "get_transactions" -params $h_params
+            $result.transactions | ForEach-Object {
+                $t = $_
+                Add-Member -InputObject $t -MemberType NoteProperty -Name "created_at_datetime" -Value ([timezone]::CurrentTimeZone.ToLocalTime(([datetime]'1/1/1970').AddSeconds($t.created_at_time)))
+                $t
+            }
+        }
     }
+    End{}
 }
+
 
 function Get-ChiaTransactionCount {
     [CmdletBinding()]
@@ -854,10 +922,108 @@ function Get-ChiaTransactionCount {
     $result
 }
 
+
+Function ChiaTransactions {
+    $currentKey = Get-ChiaKeyLoggedIn
+    $myAddresses=(chia keys derive -f $currentKey wallet-address -n 10000) | ForEach-Object{($_ -split " ")[3]}
+    
+    $txns=Get-ChiaTransactions -Wallet 25 | Sort-Object confirmed_at_height
+    $txns=Get-ChiaTransactions -Wallet 1 | Sort-Object confirmed_at_height
+
+    $balance=0
+    $txns | ForEach-Object {
+        $tx=$_
+        if($tx.type -eq "0"){
+            foreach($addition in $tx.additions) {
+                if($addition.puzzle_hash -notin ($txns | ?{$_.type -eq "1" -and $_.confirmed_at_height -eq $tx.confirmed_at_height}).additions.puzzle_hash){
+                    $balance += $addition.amount
+                }
+                else{
+                    Write-Warning("DoubleCount: " + $tx.confirmed_at_height + " puzzle_hash: "+ $addition.puzzle_hash + " amount:" + $addition.amount)
+                }
+            }
+            
+        }
+        elseif($tx.type -eq "1"){
+            if($tx.to_address -notin $myAddresses){
+                $balance -= $tx.amount
+            }
+        }
+        elseif($tx.type -eq "3"){
+            $balance += $tx.amount
+        }
+        $tx | Add-Member -MemberType NoteProperty -Name Balance -Value $balance
+        $tx | Add-Member -MemberType NoteProperty -Name AddSum -Value ($tx.additions.amount | Measure-Object -Sum).Sum
+        $tx
+    } | Format-Table -AutoSize created_at_datetime,confirmed_at_height,type,amount,balance
+    $balance
+
+    
+
+}
+
+
+Function WrongChiaTrans {
+
+    $txns=Get-ChiaTransactions -Wallet 1 | Sort-Object confirmed_at_height
+
+    $balance=0
+    $txns | ForEach-Object {
+        $tx=$_ 
+        if($tx.type -eq "0"){ #TxIn
+            $balance += $tx.amount
+        } 
+        elseif($tx.type -eq "1"){ #TxOut
+            if($tx.to_address -notin $myAddresses){
+                $balance -= $tx.amount
+            }
+        }
+        elseif($tx.type -eq "3"){ #Reward
+            $balance += $tx.amount
+        }
+        $tx | Add-Member -MemberType NoteProperty -Name Balance -Value $balance
+        $tx | Add-Member -MemberType NoteProperty -Name AddSum -Value ($tx.additions.amount | Measure-Object -Sum).Sum
+        $tx
+    } | Format-Table -AutoSize created_at_datetime,confirmed_at_height,type,amount,balance
+    $balance
+}
+
 Function Show-ChiaTransactions {
+<#
+.SYNOPSIS
+Show-ChiaTransactions zeigt die Transaktionen wie im Wallet selbst an
+
+.DESCRIPTION
+Show-ChiaTransactions zeigt die Transaktionen wie im Wallet selbst an.
+Diese Transaktionen können NICHT als Export für die Steuer verwendet werden.
+z.B. Accointing. Die Summe der Transaktionen geht nicht auf.
+Grund ist wahrscheinlich dass Change / Wechselgeld Aktionen und Transaktionen
+an mich selbst nicht korrekt erfasst werden. Hier fehlen teilweise Informationen
+was zu einer ungültigen Balance führt.
+Stattdessen versuche ich es mit Infos aus Spacescan.io
+
+.PARAMETER wallet_id
+Parameter description
+
+.PARAMETER start
+Parameter description
+
+.PARAMETER end
+Parameter description
+
+.PARAMETER reverse
+Parameter description
+
+.EXAMPLE
+An example
+
+.NOTES
+General notes
+#>
     [CmdletBinding()]
     param(
-        [int]$wallet_id = $ChiaShell.Run.SelectedWallet.id,
+        [Parameter(ValueFromPipeline=$true)]
+        $Wallet = $ChiaShell.Run.SelectedWallet.id,
         [int]$start = 0,
         [int]$end = 0,
         #https://github.com/Chia-Network/chia-blockchain/search?q=sort_key
@@ -865,110 +1031,126 @@ Function Show-ChiaTransactions {
         [switch]$reverse = $false
     )
 
-    if ($end -eq 0) {
-        $end = (Get-ChiaTransactionCount -wallet_id $wallet_id).count
+    Begin{
+        # $myAddresses=(chia keys derive -f $currentKey wallet-address -n 10000) | ForEach-Object{($_ -split " ")[3]}
     }
 
-    $Wallet = Get-ChiaWallets | Where-Object { $_.id -eq $wallet_id }
-    if ($Wallet.type -eq 0) {
-        $pow = 12
-        $WalletName = "Chia"
-        $WalletSymbol = "XCH"
-    }
-    elseif ($Wallet.type -eq 6) {
-        $pow = 3
-        $WalletName = $Wallet.Name
-        $WalletSymbol = ($Wallet.Name -split " ")[0]
-    }
-    elseif ($Wallet.type -eq 10) {
-        $pow = 0
-        $WalletName = $Wallet.Name
-        $WalletSymbol = ($Wallet.Name -split " ")[0]
-    }
+    Process{
+        $Wallet | ForEach-Object {
+            $wallet_id=$_
+            if($wallet_id.GetType().Name -eq "PsCustomObject"){
+                $wallet_id=$wallet_id.id
+            }
+            if ($end -eq 0) {
+                $end = (Get-ChiaTransactionCount -wallet_id $wallet_id).count
+            }
 
-    else {
-        Write-Error("Only XCH and CAT Wallets are Supported for this CmdLet")
-        return
-    }
+            $Wallet = Get-ChiaWallets | Where-Object { $_.id -eq $wallet_id }
+            if ($Wallet.type -eq 0) {
+                $pow = 12
+                $WalletName = "Chia"
+                $WalletSymbol = "XCH"
+            }
+            elseif ($Wallet.type -eq 6) {
+                $pow = 3
+                $WalletName = $Wallet.Name
+                $WalletSymbol = ($Wallet.Name -split " ")[0]
+            }
+            elseif ($Wallet.type -eq 10) {
+                $pow = 0
+                $WalletName = $Wallet.Name
+                $WalletSymbol = ($Wallet.Name -split " ")[0]
+            }
 
-    $typeDesc = @{
-        "0" = "TxIn"
-        "1" = "TxOut"
-        "2" = "CoinbaseReward"
-        "3" = "FeeReward"
-        "4" = "TradeIn"
-        "5" = "TradeOut"
-    }
+            else {
+                Write-Error("Only XCH and CAT Wallets are Supported for this CmdLet")
+                return
+            }
 
-    $desc = $false
-    if ($reverse) {
-        $desc = $true
-    }
+            $typeDesc = @{
+                "0" = "TxIn"
+                "1" = "TxOut"
+                "2" = "CoinbaseReward"
+                "3" = "FeeReward"
+                "4" = "TradeIn"
+                "5" = "TradeOut"
+            }
 
-    Get-ChiaTransactions @PSBoundParameters | Sort-Object created_at_datetime -Descending:$desc | ForEach-Object {
-        $item = $_
-        #$AdditionSum = ($item.additions | Measure-Object -Property amount -Sum).Sum
-        #$RemovalSum = ($item.removals | Measure-Object -Property amount -Sum).Sum
-        $Amount=$item.Amount
-        $TxType=$typeDesc.([string]$item.type)
-        
-        
-        if($TxType -in "TxIn"){
-            $Amount=0
-            foreach($addition in $item.additions){
-                $coinRecord=Get-ChiaCoinRecordsByNames -names $addition.parent_coin_info
-                if($null -eq $coinRecord){
-                    $Amount+=$addition.amount
-                    #$Amount=$item.Amount
+            $desc = $false
+            if ($reverse) {
+                $desc = $true
+            }
+            $currentKey=Get-ChiaKeyLoggedIn
+            #$txns=Get-ChiaTransactions @PSBoundParameters | Sort-Object created_at_datetime
+            $txns=Get-ChiaTransactions -Wallet 25 | Sort-Object created_at_datetime
+            
+            $coins=@{}
+
+            #$MyPuzzleHashes=($txns | Where-Object {$_.type -eq "0"}).to_puzzle_hash
+            $bech32m = [chia.dotnet.bech32.Bech32M]::New("xch")
+            $txns | ForEach-Object {
+                $item = $_
+                $TxType=$typeDesc.([string]$item.type)
+
+                $Amount=$item.amount
+                if($TxType -eq "TxOut"){
+                    # Wechselgeld kommt zurück
+                    $Amount=($item.additions | Measure-Object -Sum Amount).Sum
+                }
+                if($TxType -eq "TxIn"){
+                    # Wechselgeld kommt zurück
+                    $Amount=($item.additions | Measure-Object -Sum Amount).Sum
+                }
+
+                if($TxType -eq "TxIn"){
+                    if($item.to_address -in ($txns | Where-Object{$_.type -eq 1 -and $_.confirmed_at_height -eq $item.confirmed_at_height}).to_address){
+                        # An mich selbst geschickt
+                        return
+                    }
+                }
+
+                #$Amount=$item.Amount
+                #$item
+                #$Amount=($item.additions | Measure-Object -Sum Amount).Sum - ($item.removals | Measure-Object -Sum Amount).Sum
+                if($Wallet.Type -eq 6){ # CAT Token
+                    $AssetId = $Wallet.data -replace '00$',''
+                }
+                elseif($Wallet.Type -eq 0){ # XCH
+                    $AssetId = "xch"
+                }
+                elseif($Wallet.Type -eq 10){ # NFT
+                    <#
+                    if($typeDesc.([string]$item.type -eq "TxOut")){
+                        $NftInfos = $item.additions | ForEach-Object {Get-ChiaNftInfo -coin_ids $_.parent_coin_info}
+                    }
+                    else{
+                        $NftInfos = $item.removals | ForEach-Object {Get-ChiaNftInfo -coin_ids $_.parent_coin_info}
+                    }
+                    #FIXME das funktioniert nicht für NFTs
+                    $AssetId = $NftInfos | ForEach-Object{$_.launcher_id -replace '^0x',''}
+                    #>
+                    $AssetId = "NFT (not implemented)"
+                }
+
+                # CustomObject mit Informationen die mich interessieren
+                [PSCustomObject]@{
+                    Type            = $TxType
+                    Amount          = [double]($Amount / [Math]::Pow(10, $pow))
+                    AmountRaw       = $Amount
+                    AssetId         = $AssetId
+                    FeeAmount       = [double]($item.fee_amount / [Math]::Pow(10, $pow))
+                    Wallet          = $WalletName
+                    Symbol          = $WalletSymbol
+                    DateCreated     = (ConvertFrom-UnixTimestamp -timestamp $item.created_at_time)
+                    HeightConfirmed = $item.confirmed_at_height
+                    Id              = $item.name
+                    TradeId         = $item.trade_id
+                    ToAddress       = $item.to_address
                 }
             }
         }
-
-        if($TxType -eq "TxOut"){
-            $Amount=$item.removals.amount | Measure-Object amount -Sum
-        }
-
-        if($TxType -in "TxOut","TradeOut"){
-            $Amount=$Amount * -1
-        }
-        
-        #$Amount = $item.amount
-        if($Wallet.Type -eq 6){ # CAT Token
-            $AssetId = $Wallet.data -replace '00$',''
-        }
-        elseif($Wallet.Type -eq 0){ # XCH
-            $AssetId = "xch"
-        }
-        elseif($Wallet.Type -eq 10){ # NFT
-            <#
-            if($typeDesc.([string]$item.type -eq "TxOut")){
-                $NftInfos = $item.additions | ForEach-Object {Get-ChiaNftInfo -coin_ids $_.parent_coin_info}
-            }
-            else{
-                $NftInfos = $item.removals | ForEach-Object {Get-ChiaNftInfo -coin_ids $_.parent_coin_info}
-            }
-            #FIXME das funktioniert nicht für NFTs
-            $AssetId = $NftInfos | ForEach-Object{$_.launcher_id -replace '^0x',''}
-            #>
-            $AssetId = "NFT (not implemented)"
-        }
-
-        # CustomObject mit Informationen die mich interessieren
-        [PSCustomObject]@{
-            Type            = $TxType
-            Amount          = [double]($Amount / [Math]::Pow(10, $pow))
-            AmountRaw       = $Amount
-            AssetId         = $AssetId
-            FeeAmount       = [double]($item.fee_amount / [Math]::Pow(10, $pow))
-            Wallet          = $WalletName
-            Symbol          = $WalletSymbol
-            DateCreated     = (ConvertFrom-UnixTimestamp -timestamp $item.created_at_time)
-            HeightConfirmed = $item.confirmed_at_height
-            Id              = $item.name
-            TradeId         = $item.trade_id
-            ToAddress       = $item.to_address
-        }
     }
+    End{}
 
 }
 
@@ -2205,6 +2387,122 @@ New-ChiaNftCollection -folder . -name Chreatures -description "A collection of c
     # return generated Json File
     Get-Item -Path $colDefPath
 }
+
+function Get-ChiaTxFromSpacescan {
+    <#
+    .SYNOPSIS
+    Converts Chia Transactions to Accointing CSV Entries.
+    WAIT FOR WALLET TO SYNCHRONIZE!
+    
+    .DESCRIPTION
+    Converts Chia Transactions to Accointing CSV Entries.
+    WAIT FOR WALLET TO SYNCHRONIZE!
+    
+    Wallet Name First word should be SYMBOL
+    
+    .EXAMPLE
+    An example
+    
+    .NOTES
+    Wallet Types:
+    
+    type:
+    1   Chia
+    6   CAT
+    9   Pool Wallet
+    10  NFT Wallet
+    #>
+    [CmdletBinding()]
+    param (
+        [Parameter(ValueFromPipeline=$true)]
+        $KeyFingerprint=(Get-ChiaKey),
+        $FarmingRewardAddresses=@(
+            "xch16hxy80yteu9a0pdtkae58mkmdx85m0cjqhagvqya79de2adk07rqa0cd7c"
+        )
+    )
+    Begin{
+        $typeDesc = @{
+            "0" = "TxIn"
+            "1" = "TxOut"
+            "2" = "CoinbaseReward"
+            "3" = "FeeReward"
+            "4" = "TradeIn"
+            "5" = "TradeOut"
+        }
+        $pageCount=50
+    }
+
+    Process{
+        $KeyFingerprint | ForEach-Object {
+            $key=$_
+            Use-ChiaKey -fingerprint $key
+            $Addresses=Get-ChiaTransactions -Wallet (Get-ChiaWallets) | Where-Object{$_.type -eq "0"} | ForEach-Object{$_.to_address} | Sort-Object -Unique
+            $Addresses | ForEach-Object {
+                $addr=$_
+                $page=1
+                $mycoins=@()
+                $rows=@()
+                # api2.spacescan.io Examples
+                # https://api2.spacescan.io/1/xch/address/txns/xch16hxy80yteu9a0pdtkae58mkmdx85m0cjqhagvqya79de2adk07rqa0cd7c?page=1&count=50
+                # https://api2.spacescan.io/1/xch/address/txns/xch16hxy80yteu9a0pdtkae58mkmdx85m0cjqhagvqya79de2adk07rqa0cd7c?page=12&count=50&timestamp=1637622098
+                # https://api2.spacescan.io/1/xch/address/txns/xch16hxy80yteu9a0pdtkae58mkmdx85m0cjqhagvqya79de2adk07rqa0cd7c?page=13&count=50&timestamp=1631638832                    
+                # Collect all Coins from Paging
+                $nextTs = $null
+                do{
+                    $requestUri = ("https://api2.spacescan.io/1/xch/address/txns/" + $addr + "?page=$page" + "&count=$pageCount")
+                    if($null -ne $nextTs){$requestUri += "&timestamp=" + $nextTs}
+                    Write-Verbose($requestUri)
+                    $result=Invoke-RestMethod -Uri $requestUri -TimeoutSec 2
+                    foreach($coin in $result.data.coins){
+                        # Paging is not exact. Could be i get the same coins two times
+                        # Spacescan selects page by timestamp and not by exact id
+                        $bech32m=[chia.dotnet.bech32.Bech32M]::new("xch")
+                        if($coin.coin_name -notin $mycoins.coin_name){
+                            $h_mycoin=[ordered]@{
+                                "coin_name" = $coin.coin_name
+                                "confirmed_index" = $coin.confirmed_index
+                                "spent_index" = $coin.spent_index
+                                "coinbase" = $coin.coinbase
+                                "from_address" = $bech32m.PuzzleHashToAddress($coin.from_puzzle_hash)
+                                "to_address" = $bech32m.PuzzleHashToAddress($coin.puzzle_hash)
+                                "time" = Convert-UnixTimestampToDatetime -UnixDate $coin.timestamp
+                                "type" = $coin.type
+                            }
+
+                            if($null -eq $coin.symbol){
+                                $h_mycoin.symbol="XCH"
+                                $h_mycoin.amount=[double]$coin.amount / 1E12
+                            }
+                            else{
+                                $h_mycoin.symbol=$coin.symbol
+                                $h_mycoin.amount=$coin.amount
+                            }
+
+                            if($h_mycoin.to_address -eq $addr){
+                                $h_mycoin.direction = "received"
+                            }
+                            else{
+                                $h_mycoin.direction = "sent"
+                            }
+
+                            $mycoin=[PSCustomObject]$h_mycoin
+
+                            $mycoins+=$mycoin
+                        }
+                    }
+                    $rows+=$result.data
+                    $nextTs=($result.data.coins | Sort-Object timestamp | Select-Object -Last 1).timestamp
+                    $page++
+                }while($mycoins.count -lt $result.data.rowCount)
+                # Ausgabe
+                $mycoins
+            }
+        }
+    }
+    End{}
+        
+}
+    
 
 
 Register-ArgumentCompleter -CommandName Get-ChiaWalletBalance -ParameterName wallet_id -ScriptBlock $Global:ChiaShellArgumentCompleters.WalletId

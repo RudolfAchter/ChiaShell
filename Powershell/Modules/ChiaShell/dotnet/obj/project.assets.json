@@ -1,0 +1,218 @@
+{
+  "version": 3,
+  "targets": {
+    "net7.0": {
+      "chia-dotnet/1.4.0": {
+        "type": "package",
+        "dependencies": {
+          "HexMate": "0.0.3",
+          "Newtonsoft.Json": "13.0.1",
+          "YamlDotNet": "11.2.1"
+        },
+        "compile": {
+          "lib/net5.0/chia-dotnet.dll": {}
+        },
+        "runtime": {
+          "lib/net5.0/chia-dotnet.dll": {}
+        }
+      },
+      "HexMate/0.0.3": {
+        "type": "package",
+        "compile": {
+          "lib/net5.0/HexMate.dll": {
+            "related": ".pdb"
+          }
+        },
+        "runtime": {
+          "lib/net5.0/HexMate.dll": {
+            "related": ".pdb"
+          }
+        }
+      },
+      "Newtonsoft.Json/13.0.1": {
+        "type": "package",
+        "compile": {
+          "lib/netstandard2.0/Newtonsoft.Json.dll": {
+            "related": ".xml"
+          }
+        },
+        "runtime": {
+          "lib/netstandard2.0/Newtonsoft.Json.dll": {
+            "related": ".xml"
+          }
+        }
+      },
+      "YamlDotNet/11.2.1": {
+        "type": "package",
+        "compile": {
+          "lib/netstandard2.1/YamlDotNet.dll": {
+            "related": ".xml"
+          }
+        },
+        "runtime": {
+          "lib/netstandard2.1/YamlDotNet.dll": {
+            "related": ".xml"
+          }
+        }
+      }
+    }
+  },
+  "libraries": {
+    "chia-dotnet/1.4.0": {
+      "sha512": "J4KRsnXW01pV7zCX7NzHT3G1dpdIVCN8ebvqN39xkjLcdPK5wEfNivhk3aihlgbj8M/bsvfw6XXatfZ6Ejuy1w==",
+      "type": "package",
+      "path": "chia-dotnet/1.4.0",
+      "files": [
+        ".nupkg.metadata",
+        ".signature.p7s",
+        "LICENSE",
+        "chia-dotnet.1.4.0.nupkg.sha512",
+        "chia-dotnet.nuspec",
+        "chia-leaf-logo-384x384.png",
+        "lib/net5.0/chia-dotnet.dll"
+      ]
+    },
+    "HexMate/0.0.3": {
+      "sha512": "Xbdk/iYXjEqfK9OKxiplXEgquDM93ctu0sEyNVKFrUfZg9iwNP2BD2aXuKSJF/WpvYQMTcWA6HP7+9po6oQ30w==",
+      "type": "package",
+      "path": "hexmate/0.0.3",
+      "files": [
+        ".nupkg.metadata",
+        ".signature.p7s",
+        "hexmate.0.0.3.nupkg.sha512",
+        "hexmate.nuspec",
+        "lib/net461/HexMate.dll",
+        "lib/net461/HexMate.pdb",
+        "lib/net5.0/HexMate.dll",
+        "lib/net5.0/HexMate.pdb",
+        "lib/netcoreapp2.1/HexMate.dll",
+        "lib/netcoreapp2.1/HexMate.pdb",
+        "lib/netcoreapp3.1/HexMate.dll",
+        "lib/netcoreapp3.1/HexMate.pdb",
+        "lib/netstandard2.0/HexMate.dll",
+        "lib/netstandard2.0/HexMate.pdb",
+        "lib/netstandard2.1/HexMate.dll",
+        "lib/netstandard2.1/HexMate.pdb"
+      ]
+    },
+    "Newtonsoft.Json/13.0.1": {
+      "sha512": "ppPFpBcvxdsfUonNcvITKqLl3bqxWbDCZIzDWHzjpdAHRFfZe0Dw9HmA0+za13IdyrgJwpkDTDA9fHaxOrt20A==",
+      "type": "package",
+      "path": "newtonsoft.json/13.0.1",
+      "files": [
+        ".nupkg.metadata",
+        ".signature.p7s",
+        "LICENSE.md",
+        "lib/net20/Newtonsoft.Json.dll",
+        "lib/net20/Newtonsoft.Json.xml",
+        "lib/net35/Newtonsoft.Json.dll",
+        "lib/net35/Newtonsoft.Json.xml",
+        "lib/net40/Newtonsoft.Json.dll",
+        "lib/net40/Newtonsoft.Json.xml",
+        "lib/net45/Newtonsoft.Json.dll",
+        "lib/net45/Newtonsoft.Json.xml",
+        "lib/netstandard1.0/Newtonsoft.Json.dll",
+        "lib/netstandard1.0/Newtonsoft.Json.xml",
+        "lib/netstandard1.3/Newtonsoft.Json.dll",
+        "lib/netstandard1.3/Newtonsoft.Json.xml",
+        "lib/netstandard2.0/Newtonsoft.Json.dll",
+        "lib/netstandard2.0/Newtonsoft.Json.xml",
+        "newtonsoft.json.13.0.1.nupkg.sha512",
+        "newtonsoft.json.nuspec",
+        "packageIcon.png"
+      ]
+    },
+    "YamlDotNet/11.2.1": {
+      "sha512": "tBt8K+korVfrjH9wyDEhiLKxbs8qoLCLIFwvYgkSUuMC9//w3z0cFQ8LQAI/5MCKq+BMil0cfRTRvPeE7eXhQw==",
+      "type": "package",
+      "path": "yamldotnet/11.2.1",
+      "files": [
+        ".nupkg.metadata",
+        ".signature.p7s",
+        "LICENSE.txt",
+        "images/yamldotnet.png",
+        "lib/net20/YamlDotNet.dll",
+        "lib/net20/YamlDotNet.xml",
+        "lib/net35-client/YamlDotNet.dll",
+        "lib/net35-client/YamlDotNet.xml",
+        "lib/net35/YamlDotNet.dll",
+        "lib/net35/YamlDotNet.xml",
+        "lib/net45/YamlDotNet.dll",
+        "lib/net45/YamlDotNet.xml",
+        "lib/netstandard1.3/YamlDotNet.dll",
+        "lib/netstandard1.3/YamlDotNet.xml",
+        "lib/netstandard2.1/YamlDotNet.dll",
+        "lib/netstandard2.1/YamlDotNet.xml",
+        "yamldotnet.11.2.1.nupkg.sha512",
+        "yamldotnet.nuspec"
+      ]
+    }
+  },
+  "projectFileDependencyGroups": {
+    "net7.0": [
+      "chia-dotnet >= 1.4.0"
+    ]
+  },
+  "packageFolders": {
+    "/home/rudi/.nuget/packages/": {}
+  },
+  "project": {
+    "version": "1.0.0",
+    "restore": {
+      "projectUniqueName": "/home/rudi/git/ChiaShell/Powershell/Modules/ChiaShell/dotnet/dotnet.csproj",
+      "projectName": "dotnet",
+      "projectPath": "/home/rudi/git/ChiaShell/Powershell/Modules/ChiaShell/dotnet/dotnet.csproj",
+      "packagesPath": "/home/rudi/.nuget/packages/",
+      "outputPath": "/home/rudi/git/ChiaShell/Powershell/Modules/ChiaShell/dotnet/obj/",
+      "projectStyle": "PackageReference",
+      "configFilePaths": [
+        "/home/rudi/.nuget/NuGet/NuGet.Config"
+      ],
+      "originalTargetFrameworks": [
+        "net7.0"
+      ],
+      "sources": {
+        "https://api.nuget.org/v3/index.json": {}
+      },
+      "frameworks": {
+        "net7.0": {
+          "targetAlias": "net7.0",
+          "projectReferences": {}
+        }
+      },
+      "warningProperties": {
+        "warnAsError": [
+          "NU1605"
+        ]
+      }
+    },
+    "frameworks": {
+      "net7.0": {
+        "targetAlias": "net7.0",
+        "dependencies": {
+          "chia-dotnet": {
+            "target": "Package",
+            "version": "[1.4.0, )"
+          }
+        },
+        "imports": [
+          "net461",
+          "net462",
+          "net47",
+          "net471",
+          "net472",
+          "net48",
+          "net481"
+        ],
+        "assetTargetFallback": true,
+        "warn": true,
+        "frameworkReferences": {
+          "Microsoft.NETCore.App": {
+            "privateAssets": "all"
+          }
+        },
+        "runtimeIdentifierGraphPath": "/usr/share/dotnet/sdk/7.0.202/RuntimeIdentifierGraph.json"
+      }
+    }
+  }
+}
