@@ -2525,18 +2525,44 @@ function Get-ChiaTxFromSpacescan {
 }
 
 Function Invoke-BladebitPlotter {
+    [CmdletBinding()]
     param(
+        [ValidateScript({Test-Path -Path $_ -PathType Container})]
         $DestDir="/mnt/qnap/chiafarm01/plot/bladebit/",
+        [ValidateScript({Test-Path -Path $_ -PathType Container})]
         $TempDir=$global:ChiaShell.Plot.HybridDir,
         $CompressLevel=5,
         $Count=1
     )
     # Empty Temp Dir
     Get-Item ($TempDir + "*.tmp") | Remove-Item -Confirm:$false
+    $PlotTmpPattern=((Get-Item $DestDir).FullName -replace '\\','/') + '/plot-.*.tmp'
+    $PlotPattern=((Get-Item $DestDir).FullName -replace '\\','/') + '/plot-.*.plot'
+    $ProgressPercent=10
+    # This is the actual bladebit command. Have to modify it when i have a different binary or a different method
+    nice bladebit_cuda -c $global:ChiaShell.Plot.PoolContractAddress -f $global:ChiaShell.Plot.FarmerPublicKey --compress $CompressLevel -n $Count cudaplot --disk-128 "-t1" $TempDir $DestDir | 
+        ForEach-Object { # executes for each line of output
+            $line = $_
+            Write-Verbose($line)
 
-    bladebit_cuda -c $global:ChiaShell.Plot.PoolContractAddress -f $global:ChiaShell.Plot.FarmerPublicKey --compress $CompressLevel -n $Count cudaplot --disk-128 "-t1" `
-        $TempDir `
-        $DestDir
+            if ($line -match 'Generating plot ([0-9]+) / ([0-9+])'){ 
+                $CurrentPlotNr = [int]$Matches[1]
+                $TotalPlotNr = [int]$Matches[2]
+            }
+            if ($line -match 'Completed Phase 1 .*'){ $ProgressPercent= 30 * $CurrentPlotNr / $TotalPlotNr}
+            if ($line -match 'Completed Phase 2 .*'){ $ProgressPercent= 60 * $CurrentPlotNr / $TotalPlotNr}
+            if ($line -match 'Completed Phase 3 .*'){ $ProgressPercent= 90 * $CurrentPlotNr / $TotalPlotNr}
+            $StatusLine = (Get-Date -Format "yyyy-MM-dd HH:mm:ss") + " : " + "Plot $CurrentPlotNr of $TotalPlotNr : " + $line
+            Write-Progress -Id 5 -Activity "Plotting" -Status $StatusLine -PercentComplete $ProgressPercent
+            if ($line -match ('(' + $PlotTmpPattern + ') -> (' + $PlotPattern + ')')) {
+                $tempPlotPath = $Matches[1]
+                $PlotPath = $Matches[2]
+                Start-Sleep -Milliseconds 300
+                # Should return the ready Plot File
+                Get-Item -Path $PlotPath
+            }
+        }
+    Write-Progress -Id 5 -Activity "Plotting" -Status "Finished" -PercentComplete 100 -Completed
 }
 
 Function Get-GhorsePlots {
