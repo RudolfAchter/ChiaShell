@@ -5,6 +5,9 @@
 		},
 		{
 			"path": "../powershellmodules"
+		},
+		{
+			"path": "../../.chia/mainnet/wallet/db"
 		}
 	],
 	"settings": {
