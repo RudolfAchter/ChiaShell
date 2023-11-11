@@ -184,7 +184,11 @@ $global:ModConf.ChiaShell.values.wallet_types = @{
 # chia-dotnet from dkackman has Bech32M for Converting PuzzleHash to XCH Address and vice versa
 # https://github.com/dkackman/chia-dotnet
 if(-not ([System.Management.Automation.PSTypeName]'chia.dotnet.bech32.Bech32M').Type){
-    Add-Type -Path ($global:ModConf.ChiaShell.ModPath + "/dotnet/bin/Release/net7.0/chia-dotnet.dll")
+    Try{
+        Add-Type -Path ($global:ModConf.ChiaShell.ModPath + "/dotnet/bin/Release/net7.0/chia-dotnet.dll")
+    } Catch {
+        $_.Exception.LoaderExceptions
+    }
 }
 
 
