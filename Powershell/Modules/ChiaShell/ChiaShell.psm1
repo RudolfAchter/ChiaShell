@@ -1297,13 +1297,13 @@ General notes
                     #$Amount=$AdditionAmount<#-$RemovalAmount#>
                     $Amount=$item.amount
                 }
-                if($TxType -eq "TxIn"){
-                    if($item.to_address -in $MyPuzzleHashes){
-                        $SentToMe=$true
-                        # An mich selbst geschickt
-                        return
-                    }
+                # if($TxType -eq "TxIn"){
+                if($item.to_puzzle_hash -in $MyPuzzleHashes){
+                    $SentToMe=$true
+                    # An mich selbst geschickt
+                    #return
                 }
+                # }
                 #$Amount=$item.Amount
                 #$item
                 #$Amount=($item.additions | Measure-Object -Sum Amount).Sum - ($item.removals | Measure-Object -Sum Amount).Sum
