@@ -135,6 +135,27 @@ $Global:ChiaShell=@{
         NFT="nft"
         DID="did:chia:"
     }
+    Plot=@{
+        PoolContractAddress="YourPoolContractAddress"
+        FarmerPublicKey="YourFarmerPublicKey"
+        HybridDir="/mnt/firecuda/cudaplot/plot/tmp01"
+        CopyCacheDir="mnt/firecuda/cudaplot/plot/tmp02"
+        # Dirs where your Plots are (i Read them recursive)
+        # You also could Try to read them from Chia config.yaml
+        FarmDirs=@(
+            "/mnt/pve-chia-farmer/chiafarm01"
+            "/mnt/pve-chia-farmer/chiafarm02"
+            "/mnt/pve-chia-farmer/chiafarm03"
+            "/mnt/pve-chia-farmer/chiafarm04"
+            "/mnt/pve-chia-farmer/chiafarm05"
+            "/mnt/pve-chia-farmer/chiafarm06"
+            "/mnt/pve-chia-farmer/chiafarm07"
+            "/mnt/pve-chia-farmer/chiafarm08"
+            "/mnt/pve-chia-farmer/chiafarm09"
+            "/mnt/pve-chia-farmer/chiafarm10"
+        )
+    }
+
 }
 '@
     )
@@ -931,7 +952,7 @@ Function ChiaTransactions {
     $currentKey = Get-ChiaKeyLoggedIn
     $myAddresses=(chia keys derive -f $currentKey wallet-address -n 10000) | ForEach-Object{($_ -split " ")[3]}
     
-    $txns=Get-ChiaTransactions -Wallet 25 | Sort-Object confirmed_at_height
+    $txns=Get-ChiaTransactions -Wallet 25 | Sort-Obj confirmed_at_height
     $txns=Get-ChiaTransactions -Wallet 1 | Sort-Object confirmed_at_height
 
     $balance=0
@@ -2506,8 +2527,95 @@ function Get-ChiaTxFromSpacescan {
     End{}
         
 }
-    
 
+Function Invoke-BladebitPlotter {
+    [CmdletBinding()]
+    param(
+        [ValidateScript({Test-Path -Path $_ -PathType Container})]
+        $DestDir="/mnt/qnap/chiafarm01/plot/bladebit/",
+        [ValidateScript({Test-Path -Path $_ -PathType Container})]
+        $TempDir=$global:ChiaShell.Plot.HybridDir,
+        $CompressLevel=5,
+        $Count=1
+    )
+    # Empty Temp Dir
+    Get-Item ($TempDir + "*.tmp") | Remove-Item -Confirm:$false
+    $PlotTmpPattern=((Get-Item $DestDir).FullName -replace '\\','/') + '/plot-.*.tmp'
+    $PlotPattern=((Get-Item $DestDir).FullName -replace '\\','/') + '/plot-.*.plot'
+    $ProgressPercent=10
+    # This is the actual bladebit command. Have to modify it when i have a different binary or a different method
+    nice bladebit_cuda -c $global:ChiaShell.Plot.PoolContractAddress -f $global:ChiaShell.Plot.FarmerPublicKey --compress $CompressLevel -n $Count cudaplot --disk-128 "-t1" $TempDir $DestDir | 
+        ForEach-Object { # executes for each line of output
+            $line = $_
+            Write-Verbose($line)
+
+            if ($line -match 'Generating plot ([0-9]+) / ([0-9+])'){ 
+                $CurrentPlotNr = [int]$Matches[1]
+                $TotalPlotNr = [int]$Matches[2]
+            }
+            if ($line -match 'Completed Phase 1 .*'){ $ProgressPercent= 30 * $CurrentPlotNr / $TotalPlotNr}
+            if ($line -match 'Completed Phase 2 .*'){ $ProgressPercent= 60 * $CurrentPlotNr / $TotalPlotNr}
+            if ($line -match 'Completed Phase 3 .*'){ $ProgressPercent= 90 * $CurrentPlotNr / $TotalPlotNr}
+            $StatusLine = (Get-Date -Format "yyyy-MM-dd HH:mm:ss") + " : " + "Plot $CurrentPlotNr of $TotalPlotNr : " + $line
+            Write-Progress -Id 5 -Activity "Plotting" -Status $StatusLine -PercentComplete $ProgressPercent
+            if ($line -match ('(' + $PlotTmpPattern + ') -> (' + $PlotPattern + ')')) {
+                $tempPlotPath = $Matches[1]
+                $PlotPath = $Matches[2]
+                Start-Sleep -Milliseconds 300
+                # Should return the ready Plot File
+                Get-Item -Path $PlotPath
+            }
+        }
+    Write-Progress -Id 5 -Activity "Plotting" -Status "Finished" -PercentComplete 100 -Completed
+}
+
+Function Get-GhorsePlots {
+    $global:ChiaShell.Plot.FarmDirs | ForEach-Object {
+        $PlotDir = $_
+        if($PlotDir.GetType().Name -eq "String"){
+            $PlotDir = Get-Item -Path $PlotDir
+        }
+        Get-Item -Path ($PlotDir.FullName + "/plot/ghorse/*.plot")
+    }
+}
+
+Function Replace-GhorsePlots {
+    Write-Progress -Id 1 -Activity "Replacing Ghorse Plots" -Status "Starting" -PercentComplete 0
+    $PlotCount = Get-GhorsePlots | Measure-Object | Select-Object -ExpandProperty Count
+    $i=0
+    Get-GhorsePlots | ForEach-Object {
+        $PlotFile = $_
+        Write-Progress -Id 1 -Activity "Replacing Ghorse Plots" -Status ("{0} of {1} Plots replaced. Replacing {2}" -f $i, $PlotCount, $PlotFile.Name) -PercentComplete ($i / $PlotCount * 100)
+        #Remove on Ghorse Plot and instead plot one Bladebit Plot
+        $NewPlotDestPath=$PlotFile.DirectoryName.Replace("/ghorse", "/bladebit")
+        # Write-Host("Replacing " + $PlotFile.FullName + " with a new plot in " + $NewPlotDestPath)
+        Remove-Item -Path $PlotFile.FullName -Confirm:$false
+        # Create PlotJob to reference to the ID later
+        $PlotJob = Start-Job -ArgumentList @($NewPlotDestPath) -ScriptBlock {
+            param(
+                $NewPlotDestPath
+            )
+            # To be sure we have the Module on the new process
+            Import-Module -Name ChiaShell -DisableNameChecking
+            # This lasts really long and prints a lot on stdout
+            Invoke-BladebitPlotter -DestDir $NewPlotDestPath -Count 1
+            # Start-Sleep -Seconds 1
+        }
+
+        #Wait for PlotJob to finish and show progress
+        do {
+            Start-Sleep -Seconds 2
+            $PlotJob = Get-Job -Id $PlotJob.Id
+            Write-Progress -Id 1 -Activity "Replacing Ghorse Plots" -Status ("{0} of {1} Plots replaced. Replacing {2}" -f $i, $PlotCount, $PlotFile.Name) -PercentComplete ($i / $PlotCount * 100)
+            Receive-Job -Job $PlotJob
+        } while ($PlotJob.State -eq "Running")
+        # Finished -> Remove
+        Remove-Job -Id $PlotJob.Id
+        $i++
+    }
+    Write-Progress -Id 1 -Activity "Replacing Ghorse Plots" -Status "Finished" -PercentComplete 100 -Completed
+    
+}
 
 Register-ArgumentCompleter -CommandName Get-ChiaWalletBalance -ParameterName wallet_id -ScriptBlock $Global:ChiaShellArgumentCompleters.WalletId
 Register-ArgumentCompleter -CommandName _ChiaApiCall -ParameterName api -ScriptBlock $Global:ChiaShellArgumentCompleters.ApiName
