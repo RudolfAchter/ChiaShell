@@ -1082,7 +1082,6 @@ General notes
                 $WalletName = $Wallet.Name
                 $WalletSymbol = ($Wallet.Name -split " ")[0]
             }
-
             else {
                 Write-Error("Only XCH and CAT Wallets are Supported for this CmdLet")
                 return
@@ -1103,33 +1102,39 @@ General notes
             }
             $currentKey=Get-ChiaKeyLoggedIn
             #$txns=Get-ChiaTransactions @PSBoundParameters | Sort-Object created_at_datetime
-            $txns=Get-ChiaTransactions -Wallet 25 | Sort-Object created_at_datetime
-            
-            $coins=@{}
+            $txns=Get-ChiaTRansactions -Wallet $wallet_id -start $start -end $end | Sort-Object created_at_datetime
+
+            $additions=@{}
+            $removals=@{}
 
             #$MyPuzzleHashes=($txns | Where-Object {$_.type -eq "0"}).to_puzzle_hash
             $bech32m = [chia.dotnet.bech32.Bech32M]::New("xch")
             $txns | ForEach-Object {
                 $item = $_
                 $TxType=$typeDesc.([string]$item.type)
+                $SentToMe=$false
+                #$Amount=$item.amount
+                $AdditionAmount=($item.additions | Measure-Object -Sum Amount).Sum
+                $RemovalAmount=($item.removals | Measure-Object -Sum Amount).Sum
+                
 
-                $Amount=$item.amount
                 if($TxType -eq "TxOut"){
-                    # Wechselgeld kommt zurück
-                    $Amount=($item.additions | Measure-Object -Sum Amount).Sum
+                    # Wechselgeld kommt in der nächsten Transaktion zurück
+                    $Amount=$item.amount
+                    #$ChangeAmount=
                 }
                 if($TxType -eq "TxIn"){
                     # Wechselgeld kommt zurück
-                    $Amount=($item.additions | Measure-Object -Sum Amount).Sum
+                    #$Amount=$AdditionAmount<#-$RemovalAmount#>
+                    $Amount=$item.amount
                 }
-
                 if($TxType -eq "TxIn"){
                     if($item.to_address -in ($txns | Where-Object{$_.type -eq 1 -and $_.confirmed_at_height -eq $item.confirmed_at_height}).to_address){
+                        $SentToMe=$true
                         # An mich selbst geschickt
-                        return
+                        # return
                     }
                 }
-
                 #$Amount=$item.Amount
                 #$item
                 #$Amount=($item.additions | Measure-Object -Sum Amount).Sum - ($item.removals | Measure-Object -Sum Amount).Sum
@@ -1167,6 +1172,7 @@ General notes
                     Id              = $item.name
                     TradeId         = $item.trade_id
                     ToAddress       = $item.to_address
+                    SentToMe        = $SentToMe
                 }
             }
         }
@@ -2545,7 +2551,7 @@ Function Invoke-BladebitPlotter {
             $line = $_
             Write-Verbose($line)
 
-            if ($line -match 'Generating plot ([0-9]+) / ([0-9+])'){ 
+            if ($line -match 'Generating plot ([0-9]+) / ([0-9]+)'){ 
                 $CurrentPlotNr = [int]$Matches[1]
                 $TotalPlotNr = [int]$Matches[2]
             }
