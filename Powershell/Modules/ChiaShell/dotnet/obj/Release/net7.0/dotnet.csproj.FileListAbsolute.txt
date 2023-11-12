@@ -18,3 +18,15 @@
 /home/rudi/git/ChiaShell/Powershell/Modules/ChiaShell/dotnet/obj/Release/net7.0/dotnet.pdb
 /home/rudi/git/ChiaShell/Powershell/Modules/ChiaShell/dotnet/obj/Release/net7.0/dotnet.genruntimeconfig.cache
 /home/rudi/git/ChiaShell/Powershell/Modules/ChiaShell/dotnet/obj/Release/net7.0/ref/dotnet.dll
+C:\git\github\RudolfAchter\ChiaShell\Powershell\Modules\ChiaShell\dotnet\bin\Release\net7.0\chia-dotnet.dll
+C:\git\github\RudolfAchter\ChiaShell\Powershell\Modules\ChiaShell\dotnet\bin\Release\net7.0\HexMate.dll
+C:\git\github\RudolfAchter\ChiaShell\Powershell\Modules\ChiaShell\dotnet\bin\Release\net7.0\Newtonsoft.Json.dll
+C:\git\github\RudolfAchter\ChiaShell\Powershell\Modules\ChiaShell\dotnet\bin\Release\net7.0\YamlDotNet.dll
+C:\git\github\RudolfAchter\ChiaShell\Powershell\Modules\ChiaShell\dotnet\obj\Release\net7.0\dotnet.csproj.AssemblyReference.cache
+C:\git\github\RudolfAchter\ChiaShell\Powershell\Modules\ChiaShell\dotnet\obj\Release\net7.0\dotnet.GeneratedMSBuildEditorConfig.editorconfig
+C:\git\github\RudolfAchter\ChiaShell\Powershell\Modules\ChiaShell\dotnet\obj\Release\net7.0\dotnet.AssemblyInfoInputs.cache
+C:\git\github\RudolfAchter\ChiaShell\Powershell\Modules\ChiaShell\dotnet\obj\Release\net7.0\dotnet.AssemblyInfo.cs
+C:\git\github\RudolfAchter\ChiaShell\Powershell\Modules\ChiaShell\dotnet\obj\Release\net7.0\dotnet.csproj.CoreCompileInputs.cache
+C:\git\github\RudolfAchter\ChiaShell\Powershell\Modules\ChiaShell\dotnet\obj\Release\net7.0\dotnet.dll
+C:\git\github\RudolfAchter\ChiaShell\Powershell\Modules\ChiaShell\dotnet\obj\Release\net7.0\refint\dotnet.dll
+C:\git\github\RudolfAchter\ChiaShell\Powershell\Modules\ChiaShell\dotnet\obj\Release\net7.0\dotnet.pdb

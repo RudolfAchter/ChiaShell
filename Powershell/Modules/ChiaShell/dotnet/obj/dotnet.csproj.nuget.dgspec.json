@@ -1,26 +1,26 @@
 {
   "format": 1,
   "restore": {
-    "/home/rudi/git/ChiaShell/Powershell/Modules/ChiaShell/dotnet/dotnet.csproj": {}
+    "C:\\git\\github\\RudolfAchter\\ChiaShell\\Powershell\\Modules\\ChiaShell\\dotnet\\dotnet.csproj": {}
   },
   "projects": {
-    "/home/rudi/git/ChiaShell/Powershell/Modules/ChiaShell/dotnet/dotnet.csproj": {
+    "C:\\git\\github\\RudolfAchter\\ChiaShell\\Powershell\\Modules\\ChiaShell\\dotnet\\dotnet.csproj": {
       "version": "1.0.0",
       "restore": {
-        "projectUniqueName": "/home/rudi/git/ChiaShell/Powershell/Modules/ChiaShell/dotnet/dotnet.csproj",
+        "projectUniqueName": "C:\\git\\github\\RudolfAchter\\ChiaShell\\Powershell\\Modules\\ChiaShell\\dotnet\\dotnet.csproj",
         "projectName": "dotnet",
-        "projectPath": "/home/rudi/git/ChiaShell/Powershell/Modules/ChiaShell/dotnet/dotnet.csproj",
-        "packagesPath": "/home/rudi/.nuget/packages/",
-        "outputPath": "/home/rudi/git/ChiaShell/Powershell/Modules/ChiaShell/dotnet/obj/",
+        "projectPath": "C:\\git\\github\\RudolfAchter\\ChiaShell\\Powershell\\Modules\\ChiaShell\\dotnet\\dotnet.csproj",
+        "packagesPath": "C:\\Users\\rudol\\.nuget\\packages\\",
+        "outputPath": "C:\\git\\github\\RudolfAchter\\ChiaShell\\Powershell\\Modules\\ChiaShell\\dotnet\\obj\\",
         "projectStyle": "PackageReference",
         "configFilePaths": [
-          "/home/rudi/.nuget/NuGet/NuGet.Config"
+          "C:\\Users\\rudol\\AppData\\Roaming\\NuGet\\NuGet.Config"
         ],
         "originalTargetFrameworks": [
           "net7.0"
         ],
         "sources": {
-          "https://api.nuget.org/v3/index.json": {}
+          "https://www.nuget.org/api/v2": {}
         },
         "frameworks": {
           "net7.0": {
@@ -59,7 +59,7 @@
               "privateAssets": "all"
             }
           },
-          "runtimeIdentifierGraphPath": "/usr/share/dotnet/sdk/7.0.202/RuntimeIdentifierGraph.json"
+          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\7.0.202\\RuntimeIdentifierGraph.json"
         }
       }
     }
