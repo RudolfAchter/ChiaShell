@@ -1013,6 +1013,170 @@ Function WrongChiaTrans {
     $balance
 }
 
+
+Function Follow-ChiaTransactions {
+    [CmdletBinding()]
+    param(
+        [Parameter(ValueFromPipeline=$true)]
+        $Wallet = $ChiaShell.Run.SelectedWallet.id,
+        [int]$start = 0,
+        [int]$end = 0,
+        #https://github.com/Chia-Network/chia-blockchain/search?q=sort_key
+        #$sort_key=$null,
+        [switch]$reverse = $false
+    )
+    Begin{
+        # $myAddresses=(chia keys derive -f $currentKey wallet-address -n 10000) | ForEach-Object{($_ -split " ")[3]}
+        $typeDesc = @{
+            "0" = "TxIn"
+            "1" = "TxOut"
+            "2" = "CoinbaseReward"
+            "3" = "FeeReward"
+            "4" = "TradeIn"
+            "5" = "TradeOut"
+        }
+        $desc = $false
+        if ($reverse) {
+            $desc = $true
+        }
+
+        $MyPuzzleHashes = sqlite3 -readonly ("~/.chia/mainnet/wallet/db/blockchain_wallet_v2_r1_mainnet_" + [string](Get-ChiaKeyLoggedIn) + ".sqlite") "select puzzle_hash from derivation_paths where used=1" |
+        ForEach-Object{$_ -replace "^","0x"}
+
+    }
+
+    Process{
+        $Wallet | ForEach-Object {
+            $wallet_id=$_
+            if($wallet_id.GetType().Name -eq "PsCustomObject"){
+                $wallet_id=$wallet_id.id
+            }
+            if ($end -eq 0) {
+                $end = (Get-ChiaTransactionCount -wallet_id $wallet_id).count
+            }
+
+            $Wallet = Get-ChiaWallets | Where-Object { $_.id -eq $wallet_id }
+            if ($Wallet.type -eq 0) {
+                $pow = 12
+                $WalletName = "Chia"
+                $WalletSymbol = "XCH"
+            }
+            elseif ($Wallet.type -eq 6) {
+                $pow = 3
+                $WalletName = $Wallet.Name
+                $WalletSymbol = ($Wallet.Name -split " ")[0]
+            }
+            elseif ($Wallet.type -eq 10) {
+                $pow = 0
+                $WalletName = $Wallet.Name
+                $WalletSymbol = ($Wallet.Name -split " ")[0]
+            }
+            else {
+                Write-Error("Only XCH and CAT Wallets are Supported for this CmdLet")
+                return
+            }
+            $myCoins=@{}
+            $myBalance=0
+            $txns=Get-ChiaTransactions -Wallet $wallet_id -start $start -end $end | Sort-Object created_at_datetime
+            $txns | ForEach-Object {
+                $tx=$_
+                $TxType=$typeDesc.([string]$tx.type)
+
+                $trackedPuzzle="0x3f88092b74f32b2aaefc57c4a95ebd9292eb24ee8948e7cb2ca13dd6cacb5f8e"
+                $trackedParent="0x511fd847efe686ec899747e64ce8af2b40f56ae5f2634b53dd6543a60c6807ad"
+                $trackedAmount=38000
+                if(
+                    ($tx.additions.puzzle_hash -contains $trackedPuzzle -and $tx.additions.parent_coin_info -contains $trackedParent) -or
+                    ($tx.removals.puzzle_hash -contains $trackedPuzzle -and $tx.removals.parent_coin_info -contains $trackedParent)
+                
+                ){
+                    Write-Host("Found Tracked Coin in " + $tx.confirmed_at_height + " " +$TxType)                    
+                }
+
+                if($tx.additions.amount -contains $trackedAmount -or $tx.removals.amount -contains $trackedAmount){
+                    Write-Host("Found Tracked Amount in " + $tx.confirmed_at_height + " " +$TxType)                    
+                }
+
+                #if($TxType -eq "TxIn"){
+                    $tx.additions | ForEach-Object {
+                        $addition = $_
+                        if($addition.puzzle_hash -in $MyPuzzleHashes){
+                            
+                            if($null -eq $myCoins.($addition.parent_coin_info)){
+                                if($null -eq $myCoins.($addition.parent_coin_info).($addition.puzzle_hash)){
+                                    $myCoins.Add($addition.parent_coin_info, @{$addition.puzzle_hash = @{
+                                        Amount=$addition.amount
+                                        Status="UnSpent"
+                                    }})
+                                    $myBalance += $addition.amount
+                                }
+                                else{
+                                    if($null -eq $myCoins.($addition.parent_coin_info).($addition.puzzle_hash)){
+                                        $myCoins.($addition.parent_coin_info).Add($addition.puzzle_hash, @{
+                                            Amount=$addition.amount
+                                            Status="UnSpent"
+                                        })
+                                        $myBalance += $addition.amount
+                                    }
+                                    else{
+                                        Write-Warning("Addition Coin Already UnSpent: " + $tx.confirmed_at_height + " parent_coin_info: " + $addition.parent_coin_info +" puzzle_hash: "+ $addition.puzzle_hash)
+                                    }
+                                }
+                            }
+                        }
+                        else{
+                            Write-Warning("Addition Coin Not Mine: " + $tx.confirmed_at_height + " parent_coin_info: " + $addition.parent_coin_info +" puzzle_hash: "+ $addition.puzzle_hash)
+                        }
+                    }
+                #}
+                #elseif($TxType -eq "TxOut"){
+                    $tx.removals | ForEach-Object {
+                        $removal = $_
+                        if($removal.puzzle_hash -in $MyPuzzleHashes){
+                            $myBalance -= $removal.amount
+                            if($myCoins.($removal.parent_coin_info).($removal.puzzle_hash).Status -eq "UnSpent"){
+                                if($myCoins.($removal.parent_coin_info).($removal.puzzle_hash).Amount -eq $removal.amount){
+                                    $myCoins.($removal.parent_coin_info).($removal.puzzle_hash).Status="Spent"
+                                }
+                                else{
+                                    Write-Warning("Removal SpendAmount does not Match: " + $tx.confirmed_at_height + " parent_coin_info: " + $removal.parent_coin_info +" puzzle_hash: "+ $removal.puzzle_hash)
+                                }
+                            }
+                            elseif($myCoins.($removal.parent_coin_info).($removal.puzzle_hash).Status -eq "Spent"){
+                                Write-Warning("Removal Coin Already Spent: " + $tx.confirmed_at_height + " parent_coin_info: " + $removal.parent_coin_info +" puzzle_hash: "+ $removal.puzzle_hash)
+                            }
+                            else{
+                                Write-Warning("Removal Coin Not Found: " + $tx.confirmed_at_height + " parent_coin_info: " + $removal.parent_coin_info +" puzzle_hash: "+ $removal.puzzle_hash + " amount: " + $removal.amount)
+                            }
+                        }
+                        else{
+                            Write-Warning("Removal Coin Not Mine: " + $tx.confirmed_at_height + " parent_coin_info: " + $removal.parent_coin_info +" puzzle_hash: "+ $removal.puzzle_hash)
+                        }
+                    }
+                #}
+                Write-Host("Balance: " + $myBalance + " " + $tx.confirmed_at_height + " " +$TxType)
+            }
+
+            # Final State of Coins
+            $reportHash=@{}
+            # For Each Transaction Output Table of my coins
+            $myCoins.GetEnumerator() | ForEach-Object {
+                $coin = $_
+                $reportHash."parent_coin_info"=$coin.Key
+                $coin.Value.GetEnumerator() | ForEach-Object {
+                    $reportHash."puzzle_hash"=$_.Key
+                    $reportHash."amount"=$_.Value.Amount
+                    $reportHash."status"=$_.Value.Status
+                }
+                [PSCustomObject]$reportHash
+            }
+
+        }
+    }
+
+    End{}
+}
+
 Function Show-ChiaTransactions {
 <#
 .SYNOPSIS
@@ -1058,6 +1222,22 @@ General notes
 
     Begin{
         # $myAddresses=(chia keys derive -f $currentKey wallet-address -n 10000) | ForEach-Object{($_ -split " ")[3]}
+        $typeDesc = @{
+            "0" = "TxIn"
+            "1" = "TxOut"
+            "2" = "CoinbaseReward"
+            "3" = "FeeReward"
+            "4" = "TradeIn"
+            "5" = "TradeOut"
+        }
+        $desc = $false
+        if ($reverse) {
+            $desc = $true
+        }
+        $bech32m = [chia.dotnet.bech32.Bech32M]::New("xch")
+        $MyPuzzleHashes = sqlite3 -readonly ("~/.chia/mainnet/wallet/db/blockchain_wallet_v2_r1_mainnet_" + [string](Get-ChiaKeyLoggedIn) + ".sqlite") "select puzzle_hash from derivation_paths where used=1" |
+        ForEach-Object{$_ -replace "^","0x"}
+
     }
 
     Process{
@@ -1086,54 +1266,44 @@ General notes
                 $WalletName = $Wallet.Name
                 $WalletSymbol = ($Wallet.Name -split " ")[0]
             }
-
             else {
                 Write-Error("Only XCH and CAT Wallets are Supported for this CmdLet")
                 return
             }
 
-            $typeDesc = @{
-                "0" = "TxIn"
-                "1" = "TxOut"
-                "2" = "CoinbaseReward"
-                "3" = "FeeReward"
-                "4" = "TradeIn"
-                "5" = "TradeOut"
-            }
-
-            $desc = $false
-            if ($reverse) {
-                $desc = $true
-            }
             $currentKey=Get-ChiaKeyLoggedIn
             #$txns=Get-ChiaTransactions @PSBoundParameters | Sort-Object created_at_datetime
-            $txns=Get-ChiaTransactions -Wallet 25 | Sort-Object created_at_datetime
-            
-            $coins=@{}
+            $txns=Get-ChiaTRansactions -Wallet $wallet_id -start $start -end $end | Sort-Object created_at_datetime
+
+            $additionsSeen=@{}
+            $removalsSeen=@{}
 
             #$MyPuzzleHashes=($txns | Where-Object {$_.type -eq "0"}).to_puzzle_hash
             $bech32m = [chia.dotnet.bech32.Bech32M]::New("xch")
             $txns | ForEach-Object {
                 $item = $_
                 $TxType=$typeDesc.([string]$item.type)
-
-                $Amount=$item.amount
+                $SentToMe=$false
+                # 1st unspent coin + 2nd unspent coin = spent coin - fees
+                # 10000000000 + 113346290691 = 123400000000 - 53709309
                 if($TxType -eq "TxOut"){
-                    # Wechselgeld kommt zurück
-                    $Amount=($item.additions | Measure-Object -Sum Amount).Sum
+                    # Wechselgeld kommt in der nächsten Transaktion zurück
+                    $Amount=$item.amount
+                    #$ChangeAmount=
+                    # if()
                 }
                 if($TxType -eq "TxIn"){
                     # Wechselgeld kommt zurück
-                    $Amount=($item.additions | Measure-Object -Sum Amount).Sum
+                    #$Amount=$AdditionAmount<#-$RemovalAmount#>
+                    $Amount=$item.amount
                 }
-
-                if($TxType -eq "TxIn"){
-                    if($item.to_address -in ($txns | Where-Object{$_.type -eq 1 -and $_.confirmed_at_height -eq $item.confirmed_at_height}).to_address){
-                        # An mich selbst geschickt
-                        return
-                    }
+                # if($TxType -eq "TxIn"){
+                if($item.to_puzzle_hash -in $MyPuzzleHashes){
+                    $SentToMe=$true
+                    # An mich selbst geschickt
+                    #return
                 }
-
+                # }
                 #$Amount=$item.Amount
                 #$item
                 #$Amount=($item.additions | Measure-Object -Sum Amount).Sum - ($item.removals | Measure-Object -Sum Amount).Sum
@@ -1171,6 +1341,7 @@ General notes
                     Id              = $item.name
                     TradeId         = $item.trade_id
                     ToAddress       = $item.to_address
+                    SentToMe        = $SentToMe
                 }
             }
         }
@@ -2549,7 +2720,7 @@ Function Invoke-BladebitPlotter {
             $line = $_
             Write-Verbose($line)
 
-            if ($line -match 'Generating plot ([0-9]+) / ([0-9+])'){ 
+            if ($line -match 'Generating plot ([0-9]+) / ([0-9]+)'){ 
                 $CurrentPlotNr = [int]$Matches[1]
                 $TotalPlotNr = [int]$Matches[2]
             }
@@ -2616,6 +2787,22 @@ Function Replace-GhorsePlots {
     Write-Progress -Id 1 -Activity "Replacing Ghorse Plots" -Status "Finished" -PercentComplete 100 -Completed
     
 }
+
+function Get-ChiaSpendableCoins {
+    [CmdletBinding()]
+    param (
+        $WalletId = $ChiaShell.Run.SelectedWallet.id
+    )
+
+    if($Wallet.GetType().Name -eq "PsCustomObject"){
+        $WalletId = $Wallet.id
+    }
+
+    $result = _ChiaApiCall -api "Wallet" -function "get_spendable_coins" -params @{wallet_id=$WalletId}
+    $result.confirmed_records
+
+}
+
 
 Register-ArgumentCompleter -CommandName Get-ChiaWalletBalance -ParameterName wallet_id -ScriptBlock $Global:ChiaShellArgumentCompleters.WalletId
 Register-ArgumentCompleter -CommandName _ChiaApiCall -ParameterName api -ScriptBlock $Global:ChiaShellArgumentCompleters.ApiName
